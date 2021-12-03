@@ -44,7 +44,13 @@ end
     return (r^2+a^2-a*λ)^2 - Δ(r,a)*(η+(a-λ)^2)
 end
 
-function get_Λ(boost, χ)
-    γ = 1/√(1-boost^2)
+function get_Λ(β, χ)
+    γ = 1/√(1-β^2)
+    Λ = [γ -γ*β*cos(χ) -γ*β*sin(χ) 0;
+         -γ*β*cos(χ) (γ-1)*cos(χ)^2+1 (γ-1)*sin(χ)*cos(χ) 0;
+         -γ*β*sin(χ) (γ-1)*sin(χ)*cos(χ) (γ-1)*sin(χ)^2+1 0;
+         0 0 0 1]
+    return Λ
 end
+
 
