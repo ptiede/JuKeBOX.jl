@@ -1,19 +1,31 @@
 using LinearAlgebra
+using StaticArrays
 
-function get_λ_η(α, β,θ, a)
+@inline function get_λ_η(α, β,θ, a)
     λ = -α * sin(θ)
     η = (α^2 - a^2)*cos(θ)^2+β^2
     return λ, η
 end
 
-function get_up_um(λ, η, a)
+@inline function get_up_um(λ, η, a)
     Δ_θ  = 1/2*(1-(η+λ^2)/a^2)
     up = Δ_θ + √(Δ_θ^2 +η/a^2)
     um = Δ_θ - √(Δ_θ^2 +η/a^2)
     return up, um
 end
 
-function get_radial_roots(λ, η, a)
+function radialroots(λ::Real, η::Real, a)
+    T = promote_type(eltype(λ), eltype(η))
+    return radialroots(Complex{T}(λ), Complex{T}(η), a)
+end
+
+
+"""
+    $(SIGNATURES)
+Finds the radial roots using the of the geodesic with
+energy-scaled angular momentum `λ` and carter constant `η`.
+"""
+function radialroots(λ::Complex, η::Complex, a)
     A = a^2 - η - λ^2
     B = 2*(η+(λ-a)^2)
     C = -a^2 * η
@@ -28,29 +40,42 @@ function get_radial_roots(λ, η, a)
     return r1, r2, r3, r4
 end
 
-@inline function Δ(r,a)
-    return r^2 - 2^r +a^2
+@inline function _Δ(g::Kerr, r)
+    return r^2 - 2*r + g.spin^2
 end
 
-@inline function Ξ(r, a, θ)
-    return (r^2+a^2)^2 - Δ(r,a)*a^2*sin(θ)^2
+@inline function _Σ(g::Kerr, r, θ)
+    return r^2 + (g.spin*cos(θ))^2
 end
 
-@inline function ω(r, a, θ)
-    return 2*a*r/Ξ(r,a,θ)
+@inline function _Ξ(g::Kerr, r, θ, Δ)
+    return (r^2 + g.spin^2)^2 - Δ*(g.spin*sin(θ))^2
 end
 
-@inline function R(r, a, λ, η)
-    return (r^2+a^2-a*λ)^2 - Δ(r,a)*(η+(a-λ)^2)
+@inline function _ωZamo(g, r, Ξ)
+    return 2*g.spin*r/Ξ
 end
+
+@inline function _ℛ(g, r, λ, η, Δ)
+    a = g.spin
+    return (r^2 + a^2 - a*λ)^2 + Δ*(η + (a-λ)^2)
+end
+
+
 
 function get_Λ(β, χ)
-    γ = 1/√(1-β^2)
-    Λ = [γ -γ*β*cos(χ) -γ*β*sin(χ) 0;
-         -γ*β*cos(χ) (γ-1)*cos(χ)^2+1 (γ-1)*sin(χ)*cos(χ) 0;
-         -γ*β*sin(χ) (γ-1)*sin(χ)*cos(χ) (γ-1)*sin(χ)^2+1 0;
-         0 0 0 1]
-    return Λ
+    s,c = sincos(χ)
+    γ = 1/sqrt(1-β^2)
+
+    Λ00 = γ
+    Λ01 = -γ*β*c
+    Λ02 = -γ*β*s
+    Λ11 = (γ-1)*c^2 +1
+    Λ12 = (γ-1)*s*c
+    Λ22 = (γ-1)*s^2
+    return @SMatrix[Λ00 Λ01 Λ02 0;
+                    Λ01 Λ11 Λ12 0;
+                    Λ02 Λ12 Λ22 0;
+                    0   0   0   1
+                   ]
 end
-
-
