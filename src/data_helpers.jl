@@ -61,6 +61,10 @@ function amp_add_syserr(amp, amp_error; fractional=0, additive=0)
     return amp, σ
 end
 
+function vis_add_syserr(vis, amp_error; fractional=0, additive=0)
+    return amp_add_syserr(abs(vis), amp_error, fractional=fractional, additive=additive)
+end
+
 function logcamp_add_syserr(n1amp, n2amp, d1amp, d2amp, n1err, n2err, d1err, d2err; fractional=0, additive = 0, debias=true)
     n1amp, n1err = amp_add_syserr(n1amp, n1err, fractional=fractional, additive=additive)
     n2amp, n2err = amp_add_syserr(n2amp, n2err, fractional=fractional, additive=additive)
@@ -68,4 +72,29 @@ function logcamp_add_syserr(n1amp, n2amp, d1amp, d2amp, n1err, n2err, d1err, d2e
     d2amp, d2err = amp_add_syserr(d2amp, d2err, fractional=fractional, additive=additive)
     return make_log_closure_amplitude(n1amp, n2amp, d1amp, d2amp, n1err, n2err, d1err, d2err, debias=debias)
 end
+
+function make_bispectrum(v1, v2, v3, v1err, v2err, v3err)
+    bi = v1*v2*v3
+    bisig = abs(bi)*√((v1err/abs(v1))^2+(v2err/abs(v2))^2+(v3err/abs(v3))^2)
+    return bi, bisig
+end
+
+function closure_phase_from_bispectrum(bi, bisig)
+    cphase = angle(bi)
+    cphase_error = bisig / abs(bi)
+    return cphase, cphase_error
+end
+
+function bispectrum_add_syserr(v1, v2, v3, v1err, v2err, v3err; fractional=0, additive=0)
+    v1, v1err =vis_add_syserr(v1, v1err, fractional=fractional, additive=additive)
+    v2, v2err =vis_add_syserr(v2, v2err, fractional=fractional, additive=additive)
+    v3, v3err =vis_add_syserr(v3, v3err, fractional=fractional, additive=additive)
+    return make_bispectrum(v1, v2, v3, v1err, v2err, v3err)
+end
+
+function cphase_add_syserr(v1, v2, v3, v1err, v2err, v3err; fractional=0, additive=0)
+    bi, bisig = bispectrum_add_syserr(v1, v2, v3, v1err, v2err, v3err, fractional=fractional, additive=additive)
+    return closure_phase_from_bispectrum(bi, bisig)
+end
+    
 
