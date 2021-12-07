@@ -15,7 +15,7 @@ end
 end
 
 function radialroots(λ::Real, η::Real, a)
-    T = promote_type(eltype(λ), eltype(η))
+    T = promote_type(typeof(λ), typeof(η))
     return radialroots(Complex{T}(λ), Complex{T}(η), a)
 end
 
@@ -30,13 +30,13 @@ function radialroots(λ::Complex, η::Complex, a)
     B = 2*(η+(λ-a)^2)
     C = -a^2 * η
     P = -A^2 / 12 - C
-    Q = -A/3 * ((A/6)^2-C)-B^2/8
-    H = -9*Q+√(12*P^3+81*Q^2)
+    Q = -A/3 * ((A/6)^2-C)-B^(2/8)
+    H = -9*Q + √(12*P^3 + 81*Q^2)
     z = √((-2*(3^(1/3)*P)+2^(1/3)*H^(2/3))/(2*6^(2/3)*H^(1/3) - A/6))
-    r1 = -z-√(-A/2-z^2+B/(4*z))
-    r2 = -z+√(-A/2-z^2+B/(4*z))
-    r3 = z-√(-A/2-z^2+B/(4*z))
-    r4 = z+√(-A/2-z^2+B/(4*z))
+    r1 = -z - √(-A/2-z^2+B/(4*z))
+    r2 = -z + √(-A/2-z^2+B/(4*z))
+    r3 =  z - √(-A/2-z^2+B/(4*z))
+    r4 =  z + √(-A/2-z^2+B/(4*z))
     return r1, r2, r3, r4
 end
 
