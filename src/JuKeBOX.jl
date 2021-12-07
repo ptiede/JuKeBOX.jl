@@ -5,6 +5,7 @@ using Elliptic
 using DocStringExtensions
 using LinearAlgebra
 using StaticArrays
+using ROSE
 
 include("kerr.jl")
 include("bam.jl")
