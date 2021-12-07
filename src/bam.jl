@@ -1,35 +1,62 @@
+
+
 """
-    Differentiable accelerated Ray Tracing
-
-This is a differentiable general relativistic ray-tracer. I think that's it
+    $(TYPDEF)
+Local EDF in the frame of the fluid. We include cutoffs to ensure the distribution
+is integrable.
 """
-
-
-include("model_helpers.jl")
-
-
-
-
-struct Observer{D,O}
-    distance::D
-    inclination::O
+struct SimplePowerLaw{T,B} <: AbstractEDF
+    α::T
+    νmin::B
+    νmax::B
 end
 
+function SimplePowerLaw(α)
+    return SimplePowerLaw(α, 1e-30, 1e30)
+end
 
-struct BAM{FD, FV, V, B}
-    nmax::Int
-    """Function that computes the profile as radius `r` and redshift `z`"""
-    profile::FD
-    """ FluidVelocity struct"""
+struct BAM{M, P, E, V, B, S} <: AccretionModel
+    manifold::M
+    """Function that computes the profile as radius `r`"""
+    profile::P
+    """local EDF function relative to fluid frame"""
+    edf::E
+    """velocity field"""
     β::V
-    """ MagneticField struct"""
+    """magnetic field relative to fluid frame"""
     b::B
+    """ Stop Condition """
+    stop::S
 end
 
-@inline velocity(b::BAM) = b.β
-@inline bvector(b::BAM) = b.b
+"""
+    $(SIGNATURES)
+A convinience helper function used to construct the canonical BAM problem from
+Palumbo (2022) using the BAMVelocity profile, BAMMagneticField, and the ReverseNMax
+stop condition.
 
-struct FluidVelocity{T}
+# Arguments
+
+- `nmax`: The maximum numbe of turning points considered before stopping ray-Tracing
+- `profile`: The profile function we will be using
+- `α`: The local electron **spectral** index assumed in the flow of the fluid
+- `βv`: The fluid flow velocity magnitude.
+- `χ`: The angle of the fluid velocity relative to the ZAMO reference frame
+- `ι`: ``B_{eq} = \\sin(\\iota)`` which defines the relative strength of the B-field
+- `η`: The angle of the magnetic field relative to outward radial unit vector
+"""
+function BAM(nmax::Int, profile::AbstractProfile, α, βv, χ, ι, η=χ+π)
+    edf = SimplePowerLaw(α)
+    β = BAMVelocity(βv, χ)
+    b = BAMMagneticField(ι, η)
+    stop = ReverseNMax(nmax)
+    return BAM(profile, edf, β, b, stop)
+end
+
+@inline velocityfield(b::BAM, p::Coordinate) = b.β
+@inline magneticfield(b::BAM, p::Coo) = b.b
+
+struct BAMVelocity{T}
     β::T
     χ::T
     βr::T
@@ -42,7 +69,7 @@ struct FluidVelocity{T}
     end
 end
 
-struct MagneticField{T}
+struct BAMMagneticField{T}
     ι::T
     η::T
     beq::T
@@ -157,30 +184,6 @@ function ExteriorRayCache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac)
 end
 
 
-function raycache(sβ, λ, η, g::Kerr, o::Observer)
-    a = g.spin
-    up, um = get_up_um(λ, η, a)
-    urat = up/um
-    u₋a² = um*a^2
-
-    roots = radialroots(λ, η, a)
-    r1,r2,r3,r4 = roots
-    rootdiffs = (r3-r1, r3-r2, r4-r2, r4-r1)
-    r31, r32, r42, r41 = rootdiffs
-
-    F₀_sin = cos(o.inclination)/sqrt(up)
-    F₀ = F(asin(F₀_sin), urat)
-    K₀ = K(urat)
-    ffac = 1/2*sqrt(real(r31*r42))
-
-    # case 3 interior rays
-    if (imag(r3) > eps(typeof(um)))
-        return InteriorRayCache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, ffac, a)
-    else
-        return ExteriorRayCache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, ffac)
-    end
-
-end
 
 function raycache(sβ, λ, η, g::Kerr, o::Observer)
     a = g.spin
@@ -208,33 +211,36 @@ function raycache(sβ, λ, η, g::Kerr, o::Observer)
 end
 
 
-function trace_ray(α, β, g::Kerr, o::Observer, bam::BAM)
-
+function raytrace(α, β, o::Observer, bam::BAM)
+    g = bam.manifold
     # Find the geodesic charges
-    λ, η = get_λ_η(α, β, o.inclination, g.spin)
+    λ, η = get_λ_η(α, β, o.inclination, g)
     # Kill the vortical geodesics
     η < 0 && return (
                      zero(eltype(η)), #i
                      zero(eltype(η)), #q
                      zero(eltype(η)), #u
+                     zero(eltype(η))  #v
                      )
 
-
+    _raytrace(symmetry(bam), α, β, o, bam)
     # precompute some stuff that will be constant over ray
     # TODO: Make sure this isn't causing dynamic dispatch...
     cache = raycache(sign(β), λ, η, g, o)
 
     # create the stokes i,q,u allocators
     T = eltype(λ)
-    stokesi = zero(T); stokesq = zero(T); stokesu = zero(T)
+    stokesi = zero(T); stokesq = zero(T); stokesu = zero(T); stokesv = zero(T)
     for n in 0:bam.nmax
-        i, q, u, _, _ = trace_nring(n, α, β, cache, g, o, bam)
+        _, i, q, u, v = trace_nring(n, α, β, cache, g, o, bam)
         stokesi += i
         stokesq += q
         stokesu += u
+        stokesv += v
+
     end
 
-    return stokesi, stokesq, stokesu
+    return stokesi, stokesq, stokesu, stokesv
 end
 
 function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam::BAM)
@@ -271,7 +277,7 @@ function zamo_tetrad(gs::MetricTensor{M,C}) where {M<:Kerr, C}
                     ]
 end
 
-function penrose_walker(pcon, k, spin, rs)
+@inline function penrose_walker(pcon, k, spin, rs)
     pt = pcon[1]; pr = pcon[2]; pθ = pcon[2]; pϕ = pcon[3]
     kt = k[1]; kr = k[2]; kθ = k[3]; kϕ = k[4]
 
@@ -306,8 +312,8 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     # Transform to fluid frame
     vfield = velocity(bam)
     Λ = get_Λ(vfield.β, vfield.χ)
-    efluid = Λ*ezamo #I skip the two minkowski applications since this is nillpotent
-    pfluid = ηij*efluid*pform
+    efluid = ηij*Λ*ηij*ezamo
+    pfluid = ηij*efluid*pform # Computes and raises the index
 
     z = 1/pfluid[1]
     lp = abs(pfluid[1]/pfluid[3])
@@ -318,20 +324,20 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     f3 = cross(p3, magnetic_vector(b))
     f = SVector(zero(eltype(f3)), f3[1], f3[2], f3[3])
 
-    #Now move back to coordinate basis
-    fkerr = transpose(efluid)*f
+    #Now move back to coordinate basis this needs a transpose right?
+    fkerr = efluid'*f
 
     # Constuct PW constant
     pt = pcon
     κ1, κ2 = penrose_walker(pcon, fkerr, g.spin, r)
 
     # screen appearance
-    ν = -(α + g.spin * sin(o.inclination))
-    eα = (β*κ2 - ν*κ1) / (ν^2 + β^2)
-    eβ = (β*κ1 + ν*κ2) / (ν^2 + β^2)
+    ν = -(α + g.spin*sin(o.inclination))
+    eα = (β*κ2 - ν*κ1)/(ν^2 + β^2)
+    eβ = (β*κ1 + ν*κ2)/(ν^2 + β^2)
 
     # Get the profile value at the emission radius
-    prof = profile(bam, r, z)
+    prof = profile(bam, r, 0.0)*z^(3+bam.α)
     q = -(eα^2 - eβ^2)*lp*prof
     u = -2*eα*eβ*lp*prof
     i = hypot(q,u)
