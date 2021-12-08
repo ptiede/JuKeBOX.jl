@@ -28,7 +28,7 @@ end
     return (r^2 + g.spin^2)^2 - Δ*(g.spin*sin(θ))^2
 end
 
-@inline function _ωZamo(g, r, Ξ)
+@inline function _ωZamo(g::Kerr, r, Ξ)
     return 2*g.spin*r/Ξ
 end
 struct MetricTensor{M, P, C}
@@ -36,6 +36,12 @@ struct MetricTensor{M, P, C}
     p::P
     cache::C
 end
+
+@inline function _ℛ(g, r, λ, η, Δ)
+    a = g.spin
+    return (r^2 + a^2 - a*λ)^2 - Δ*(η + (a-λ)^2)
+end
+
 
 """
     $(SIGNATURES)

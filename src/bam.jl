@@ -79,7 +79,7 @@ end
 
 
 @inline function magnetic_vector(b::MagneticField)
-    return SVector(b.br, b.bϕ, b.bz)
+    return SVector(b.br, b.bz, b.bϕ)
 end
 
 @inline function profile(b::BAM, r)
@@ -99,7 +99,6 @@ struct RayCache{T,R}
     rootdiffs::R
     F₀::T
     K₀::T
-    ffac::T
     k::T
     Ir_total::T
     # This is the specific stuff for interior rays
@@ -109,6 +108,7 @@ struct RayCache{T,R}
     I3r::T
     # This is specific stuff for exterior rays
     f₀::T
+    ffac::T
     Ir_turn::T
 end
 
@@ -128,37 +128,39 @@ end
     return I3r - I3rp
 end
 
-function interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac, a)
+function interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
     r1,r2,_,_ = roots
     r31, r32, r42, r41 = rootdiffs
-    rp = 1+sqrt(1-a^2)
     Agl = real(sqrt(r32*r42))
     Bgl = real(sqrt(r31*r41))
     rr1 = real(r1)
     rr2 = real(r2)
     k = ((Agl+Bgl)^2 - (rr2-rr1)^2)/(4*Agl*Bgl)
     I3r = _I3(Agl, Bgl, k)
+    rp = 1+sqrt(1-a^2)
     I3total = _I3total(I3r, Agl, Bgl, k, rp, rr1, rr2)
 
-    return RayCache(true, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac,
+    return RayCache(true, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0,
                             k, I3total,
                             rp, Agl, Bgl, I3r,
-                            zero(typeof(λ)), zero(typeof(λ)) #zero this out
+                            zero(typeof(λ)), zero(typeof(λ)), zero(typeof(λ)) #zero this out
                     )
 
 end
 
-function exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac)
+function exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
     r31, r32, r42, r41 = rootdiffs
     k = real(r32*r41/(r31*r42))
     f₀ = F(real(asin(sqrt(r31/r41))), k)
+    rp = 1+sqrt(1-a^2)
     Ir_turn = real(2/sqrt(r31*r42)*f₀)
     Ir_total = 2*Ir_turn
+    ffac = 1/2*sqrt(real(r31*r42))
     T = typeof(λ)
-    return RayCache(false, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac,
+    return RayCache(false, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0,
                             k, Ir_total,
-                            zero(T), zero(T), zero(T), zero(T),
-                            f₀, Ir_turn)
+                            rp, zero(T), zero(T), zero(T),
+                            f₀, ffac, Ir_turn)
 
 end
 
@@ -172,18 +174,16 @@ function raycache(sβ, λ, η, g::Kerr, o::Observer)
     roots = radialroots(λ, η, a)
     r1,r2,r3,r4 = roots
     rootdiffs = (r3-r1, r3-r2, r4-r2, r4-r1)
-    r31, r32, r42, r41 = rootdiffs
 
     F₀_sin = clamp(cos(o.inclination)/sqrt(up), -1.0, 1.0)
     F₀ = F(asin(F₀_sin), urat)
     K₀ = K(urat)
-    ffac = 1/2*sqrt(real(r31*r42))
 
     # case 3 interior rays
     if abs(imag(r3)) > 1e-14
-        return interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, ffac, a)
+        return interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
     else
-        return exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, ffac)
+        return exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
     end
 
 end
@@ -192,7 +192,7 @@ function traceimg!(polim, alpha, beta, g, o, bam)
     stokesi = polim.I
     stokesq = polim.Q
     stokesu = polim.U
-    @inbounds for C in CartesianIndices(stokesi)
+    for C in CartesianIndices(stokesi)
         iy,ix = Tuple(C)
         x = alpha[ix]
         y = beta[iy]
@@ -201,6 +201,13 @@ function traceimg!(polim, alpha, beta, g, o, bam)
         stokesq[C] = q
         stokesu[C] = u
     end
+end
+
+function traceimg(alpha, beta, g, o, bam)
+    nx,ny = length(alpha), length(beta)
+    polim = StructArray((I=zeros(ny, nx), Q = zeros(ny, nx), U = zeros(ny, nx)))
+    traceimg!(polim, alpha, beta, g, o, bam)
+    return polim
 end
 
 
@@ -294,6 +301,7 @@ end
 function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     sβ = sign(β)
     m = get_nturns(n, sβ)
+    #println(r, ", ", λ, ", ", η, ", ", α, ", ", β)
     # Get the metric stuff
     gs = metric(g, 0, r, π/2, 0)
     Δs, _, _, _, _ = gs.cache

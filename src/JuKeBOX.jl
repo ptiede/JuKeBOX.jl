@@ -5,6 +5,7 @@ using Elliptic
 using DocStringExtensions
 using LinearAlgebra
 using StaticArrays
+using StructArrays
 using ROSE
 
 
