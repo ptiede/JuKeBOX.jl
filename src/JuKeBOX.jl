@@ -7,6 +7,8 @@ using LinearAlgebra
 using StaticArrays
 using ROSE
 
+
+include("model_helpers.jl")
 include("kerr.jl")
 include("bam.jl")
 end
