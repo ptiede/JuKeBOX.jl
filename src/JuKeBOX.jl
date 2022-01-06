@@ -4,6 +4,7 @@ module JuKeBOX
 using Elliptic
 using DocStringExtensions
 using LinearAlgebra
+using Polyester
 using StaticArrays
 using StructArrays
 using ROSE

@@ -128,7 +128,7 @@ end
     return I3r - I3rp
 end
 
-function interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
+ function interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
     r1,r2,_,_ = roots
     r31, r32, r42, r41 = rootdiffs
     Agl = real(sqrt(r32*r42))
@@ -148,7 +148,7 @@ function interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
 
 end
 
-function exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
+ function exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
     r31, r32, r42, r41 = rootdiffs
     k = real(r32*r41/(r31*r42))
     f₀ = F(real(asin(sqrt(r31/r41))), k)
@@ -165,7 +165,7 @@ function exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
 end
 
 
-function raycache(sβ, λ, η, g::Kerr, o::Observer)
+ function raycache(sβ, λ, η, g::Kerr, o::Observer)
     a = g.spin
     up, um = get_up_um(λ, η, a)
     urat = up/um
@@ -192,7 +192,7 @@ function traceimg!(polim, alpha, beta, g, o, bam)
     stokesi = polim.I
     stokesq = polim.Q
     stokesu = polim.U
-    for C in CartesianIndices(stokesi)
+    @batch for C in CartesianIndices(stokesi)
         iy,ix = Tuple(C)
         x = alpha[ix]
         y = beta[iy]
@@ -203,7 +203,25 @@ function traceimg!(polim, alpha, beta, g, o, bam)
     end
 end
 
-function traceimg(alpha, beta, g, o, bam)
+function traceimg!(simg::ROSE.StokesImage, g, o, bam)
+    alpha, beta = ROSE.imagepixels(simg)
+    @batch for C in CartesianIndices(simg)
+        iy,ix = Tuple(C)
+        x = alpha[ix]
+        y = beta[iy]
+        i = first(raytrace(x, y, g, o, bam))
+        simg[C] = i
+    end
+end
+
+
+function tracesimg(fov, npix, g, o, bam)
+    simg = ROSE.StokesImage(zeros(npix, npix), fov, fov)
+    traceimg!(simg, g, o, bam)
+    return simg
+end
+
+function tracepolmap(alpha, beta, g, o, bam)
     nx,ny = length(alpha), length(beta)
     polim = StructArray((I=zeros(ny, nx), Q = zeros(ny, nx), U = zeros(ny, nx)))
     traceimg!(polim, alpha, beta, g, o, bam)
@@ -245,6 +263,7 @@ function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam:
     r, spr = _emission_radius(n, cache)
     T = eltype(r)
     # bail out
+    cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
     r < cache.rp*1.01 && return zero(T), zero(T), zero(T), zero(T)
     r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
     return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam)
@@ -398,15 +417,15 @@ function _exterior_emission_radius(n::Int, cache)
     return r, spr
 end
 
-function _interior_emission_radius(n::Int, cache)
+@fastmath function _interior_emission_radius(n::Int, cache)
     # get the correct number of turning point
     m = get_nturns(n, cache.sβ)
-    r1,r2,r3,r4 = cache.roots
+    Ir = minotime(m, cache)
+    Ir > cache.Ir_total && return -one(typeof(Ir)), one(eltype(Ir))
+    r1,r2,_,_ = cache.roots
     rr1 = real(r1)
     rr2 = real(r2)
     Agl = cache.Agl; Bgl = cache.Bgl
-    Ir = minotime(m, cache)
-    Ir > cache.Ir_total && return -one(typeof(Ir)), one(eltype(Ir))
     X = sqrt(Agl*Bgl)*(Ir - cache.I3r)
     cn = Jacobi.cn(X, cache.k)
     return ((Bgl*rr2 - Agl*rr1) + (Bgl*rr2 + Agl*rr1)*cn) / ((Bgl-Agl)+(Bgl+Agl)*cn), one(typeof(X))
