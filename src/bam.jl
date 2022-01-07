@@ -366,8 +366,9 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
 
     # screen appearance
     ν = -(α + g.spin * sin(o.inclination))
-    eα = (β*κ2 - ν*κ1) / (ν^2 + β^2)
-    eβ = (β*κ1 + ν*κ2) / (ν^2 + β^2)
+    enorm = (ν^2 + β^2)*sqrt(κ1^2+κ2^2)
+    eα = (β*κ2 - ν*κ1) / enorm
+    eβ = (β*κ1 + ν*κ2) / enorm
     # Get the profile value at the emission radius
     prof = profile(bam, r)*z^(3+bam.α)
     q = -(eα^2 - eβ^2)*lp*prof
