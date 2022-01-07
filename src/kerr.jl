@@ -1,3 +1,5 @@
+
+
 """
     $(TYPEDEF)
 Kerr spacetime with spin `spin`. We assume that we are in unitless scales where
@@ -13,11 +15,33 @@ For a spacetime `g` construct metric tensor at position `p`.
 There is an optional cache that can be used to cache intermediate results for increased
 speed.
 """
+
+@inline function _Δ(g::Kerr, r)
+    return r^2 - 2*r + g.spin^2
+end
+
+@inline function _Σ(g::Kerr, r, θ)
+    return r^2 + (g.spin*cos(θ))^2
+end
+
+@inline function _Ξ(g::Kerr, r, θ, Δ)
+    return (r^2 + g.spin^2)^2 - Δ*(g.spin*sin(θ))^2
+end
+
+@inline function _ωZamo(g::Kerr, r, Ξ)
+    return 2*g.spin*r/Ξ
+end
 struct MetricTensor{M, P, C}
     g::M
     p::P
     cache::C
 end
+
+@inline function _ℛ(g, r, λ, η, Δ)
+    a = g.spin
+    return (r^2 + a^2 - a*λ)^2 - Δ*(η + (a-λ)^2)
+end
+
 
 """
     $(SIGNATURES)
@@ -36,6 +60,7 @@ function metric(g::Kerr, t, r, θ, ϕ)
     return MetricTensor(g, (t,r,θ,ϕ), cache)
 end
 
+
 """
     $(SIGNATURES)
 Returns the components of the metric tensor `g` in SMatrix.
@@ -43,7 +68,7 @@ Returns the components of the metric tensor `g` in SMatrix.
 function components(g::MetricTensor{K, C}) where {K<:Kerr, C}
     Δ, Σ, Ξ, Ξsin2, ω = g.cache
     gtt = -Δ*Σ/Ξ + ω^2*Ξsin2/Σ
-    gtϕ = -Ξsin2/Σ*ω
+    gtϕ = -ω*Ξsin2/Σ
     grr = Σ/Δ
     gθθ = Σ
     gϕϕ = Ξsin2/Σ
@@ -62,7 +87,7 @@ end
 Computes the radial potential of the metric tensor assuming the energy scaled angular momentum
 `λ`` and carter constant `η``
 """
-function ℛ(g::MetricTensor, η, λ)
+function ℛ(g::MetricTensor, λ, η)
     r = g.p[2]
     Δ = g.cache.Δ
     return _ℛ(g.g, r, λ, η, Δ)
