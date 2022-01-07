@@ -5,15 +5,12 @@
 Local EDF in the frame of the fluid. We include cutoffs to ensure the distribution
 is integrable.
 """
-struct SimplePowerLaw{T,B} <: AbstractEDF
+Base.@kwdef struct SimplePowerLaw{T,B} <: AbstractEDF
     α::T
-    νmin::B
-    νmax::B
+    νmin::B = 1e-30
+    νmax::B = 1e30
 end
 
-function SimplePowerLaw(α)
-    return SimplePowerLaw(α, 1e-30, 1e30)
-end
 
 struct BAM{M, P, E, V, B, S} <: AccretionModel
     manifold::M

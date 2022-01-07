@@ -28,7 +28,6 @@ propogationdirection(::Type{NMax}) = Reverse()
 
 include("observer.jl")
 include("profile.jl")
-include("manifold.jl")
-include("kerr.jl")
+include("manifold/manifold.jl")
 include("bam.jl")
 end

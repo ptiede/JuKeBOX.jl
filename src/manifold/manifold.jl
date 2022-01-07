@@ -11,3 +11,6 @@ struct Coordinate{A<:Chart, T} <: FieldVector{4, T}
 end
 
 const Coordinates{A} = Coordinates{A, T} where {N, A}
+
+include(joinpath(@__DIR__, "kerr.jl"))
+include(joinpath(@__DIR__, "minkowski.jl"))
