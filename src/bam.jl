@@ -89,27 +89,27 @@ end
 
 
 
-struct RayCache{T,R}
+@concrete struct RayCache
     interiorflag::Bool
-    sβ::T
-    λ::T
-    η::T
-    u₋a²::T
-    roots::R
-    rootdiffs::R
-    F₀::T
-    K₀::T
-    k::T
-    Ir_total::T
+    sβ
+    λ
+    η
+    u₋a²
+    roots
+    rootdiffs
+    F₀
+    K₀
+    k
+    Ir_total
     # This is the specific stuff for interior rays
-    rp::T
-    Agl::T
-    Bgl::T
-    I3r::T
+    rp
+    Agl
+    Bgl
+    I3r
     # This is specific stuff for exterior rays
-    f₀::T
-    ffac::T
-    Ir_turn::T
+    f₀
+    ffac
+    Ir_turn
 end
 
 
@@ -203,23 +203,8 @@ function traceimg!(polim, alpha, beta, g, o, bam)
     end
 end
 
-function traceimg!(simg::ROSE.StokesImage, g, o, bam)
-    alpha, beta = ROSE.imagepixels(simg)
-    @batch for C in CartesianIndices(simg)
-        iy,ix = Tuple(C)
-        x = alpha[ix]
-        y = beta[iy]
-        i = first(raytrace(x, y, g, o, bam))
-        simg[C] = i
-    end
-end
 
 
-function tracesimg(fov, npix, g, o, bam)
-    simg = ROSE.StokesImage(zeros(npix, npix), fov, fov)
-    traceimg!(simg, g, o, bam)
-    return simg
-end
 
 function tracepolmap(alpha, beta, g, o, bam)
     nx,ny = length(alpha), length(beta)
