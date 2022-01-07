@@ -5,7 +5,6 @@ This is a differentiable general relativistic ray-tracer. I think that's it
 """
 
 
-include("model_helpers.jl")
 
 
 struct GaussianRing{R,W}
@@ -80,7 +79,7 @@ end
 
 
 @inline function magnetic_vector(b::MagneticField)
-    return SVector(b.br, b.bϕ, b.bz)
+    return SVector(b.br, b.bz, b.bϕ)
 end
 
 @inline function profile(b::BAM, r)
@@ -100,7 +99,6 @@ struct RayCache{T,R}
     rootdiffs::R
     F₀::T
     K₀::T
-    ffac::T
     k::T
     Ir_total::T
     # This is the specific stuff for interior rays
@@ -110,6 +108,7 @@ struct RayCache{T,R}
     I3r::T
     # This is specific stuff for exterior rays
     f₀::T
+    ffac::T
     Ir_turn::T
 end
 
@@ -124,48 +123,49 @@ end
 end
 
 @inline function _I3total(I3r, Agl, Bgl, k, rp, r1::Real, r2::Real)
-    println(rp, " ", r1, " ", r2)
     I3rp_angle = acos( (Agl*(rp - r1) - Bgl*(rp - r2))/(Agl*(rp - r1) + Bgl*(rp - r2)) )
-    I3rp = ellipkinc(I3rp_angle, k)/sqrt(Agl*Bgl)
+    I3rp = F(I3rp_angle, k)/sqrt(Agl*Bgl)
     return I3r - I3rp
 end
 
-function interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac, a)
+ function interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
     r1,r2,_,_ = roots
     r31, r32, r42, r41 = rootdiffs
-    rp = 1+sqrt(1-a^2)
     Agl = real(sqrt(r32*r42))
     Bgl = real(sqrt(r31*r41))
     rr1 = real(r1)
     rr2 = real(r2)
-    k = ((Agl+Bgl)^2 - (rr2-rr1)^2)/sqrt(4*Agl*Bgl)
+    k = ((Agl+Bgl)^2 - (rr2-rr1)^2)/(4*Agl*Bgl)
     I3r = _I3(Agl, Bgl, k)
+    rp = 1+sqrt(1-a^2)
     I3total = _I3total(I3r, Agl, Bgl, k, rp, rr1, rr2)
 
-    return RayCache(true, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac,
+    return RayCache(true, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0,
                             k, I3total,
                             rp, Agl, Bgl, I3r,
-                            zero(typeof(λ)), zero(typeof(λ)) #zero this out
+                            zero(typeof(λ)), zero(typeof(λ)), zero(typeof(λ)) #zero this out
                     )
 
 end
 
-function exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac)
+ function exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
     r31, r32, r42, r41 = rootdiffs
     k = real(r32*r41/(r31*r42))
     f₀ = F(real(asin(sqrt(r31/r41))), k)
+    rp = 1+sqrt(1-a^2)
     Ir_turn = real(2/sqrt(r31*r42)*f₀)
     Ir_total = 2*Ir_turn
+    ffac = 1/2*sqrt(real(r31*r42))
     T = typeof(λ)
-    return RayCache(false, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, ffac,
+    return RayCache(false, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0,
                             k, Ir_total,
-                            zero(T), zero(T), zero(T), zero(T),
-                            f₀, Ir_turn)
+                            rp, zero(T), zero(T), zero(T),
+                            f₀, ffac, Ir_turn)
 
 end
 
 
-function raycache(sβ, λ, η, g::Kerr, o::Observer)
+ function raycache(sβ, λ, η, g::Kerr, o::Observer)
     a = g.spin
     up, um = get_up_um(λ, η, a)
     urat = up/um
@@ -174,20 +174,58 @@ function raycache(sβ, λ, η, g::Kerr, o::Observer)
     roots = radialroots(λ, η, a)
     r1,r2,r3,r4 = roots
     rootdiffs = (r3-r1, r3-r2, r4-r2, r4-r1)
-    r31, r32, r42, r41 = rootdiffs
 
-    F₀_sin = cos(o.inclination)/sqrt(up)
+    F₀_sin = clamp(cos(o.inclination)/sqrt(up), -1.0, 1.0)
     F₀ = F(asin(F₀_sin), urat)
     K₀ = K(urat)
-    ffac = 1/2*sqrt(real(r31*r42))
 
     # case 3 interior rays
-    if (imag(r3) > eps(typeof(um)))
-        return interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, ffac, a)
+    if abs(imag(r3)) > 1e-14
+        return interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
     else
-        return exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, ffac)
+        return exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
     end
 
+end
+
+function traceimg!(polim, alpha, beta, g, o, bam)
+    stokesi = polim.I
+    stokesq = polim.Q
+    stokesu = polim.U
+    @batch for C in CartesianIndices(stokesi)
+        iy,ix = Tuple(C)
+        x = alpha[ix]
+        y = beta[iy]
+        i,q,u = raytrace(x, y, g, o, bam)
+        stokesi[C] = i
+        stokesq[C] = q
+        stokesu[C] = u
+    end
+end
+
+function traceimg!(simg::ROSE.StokesImage, g, o, bam)
+    alpha, beta = ROSE.imagepixels(simg)
+    @batch for C in CartesianIndices(simg)
+        iy,ix = Tuple(C)
+        x = alpha[ix]
+        y = beta[iy]
+        i = first(raytrace(x, y, g, o, bam))
+        simg[C] = i
+    end
+end
+
+
+function tracesimg(fov, npix, g, o, bam)
+    simg = ROSE.StokesImage(zeros(npix, npix), fov, fov)
+    traceimg!(simg, g, o, bam)
+    return simg
+end
+
+function tracepolmap(alpha, beta, g, o, bam)
+    nx,ny = length(alpha), length(beta)
+    polim = StructArray((I=zeros(ny, nx), Q = zeros(ny, nx), U = zeros(ny, nx)))
+    traceimg!(polim, alpha, beta, g, o, bam)
+    return polim
 end
 
 
@@ -225,9 +263,9 @@ function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam:
     r, spr = _emission_radius(n, cache)
     T = eltype(r)
     # bail out
-    isnan(r) && return zero(T), zero(T), zero(T), zero(T)
-    r > cache.Ir_total && return zero(T), zero(T), zero(T), zero(T)
-
+    cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
+    r < cache.rp*1.01 && return zero(T), zero(T), zero(T), zero(T)
+    r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
     return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam)
 end
 
@@ -244,21 +282,21 @@ function zamo_tetrad(gs::MetricTensor{M,C}) where {M<:Kerr, C}
     _,r,_,_ = gs.p
     rtΞ = sqrt(Ξs)
     rtΔ = sqrt(Δs)
-    ett, etϕ = 1/r*rtΞ/rtΔ.*(1, ωs)
+    ett, etϕ = 1/r*rtΞ/rtΔ, 1/r*rtΞ/rtΔ*ωs
     err = 1/r*rtΔ
     eϕϕ = r/rtΞ
     eθθ = -1/r
     T = zero(Δs)
     return @SMatrix [ ett     zero(T) zero(T) etϕ    ;
                       zero(T) err     zero(T) zero(T);
-                      zero(T) zero(T) zero(T) eϕϕ    ;
-                      zero(T) zero(T) eθθ     zero(T)
+                      zero(T) zero(T) eθθ     zero(T);
+                      zero(T) zero(T) zero(T) eϕϕ
                     ]
 end
 
 function penrose_walker(pcon, k, spin, rs)
-    pt = pcon[1]; pr = pcon[2]; pθ = pcon[2]; pϕ = pcon[3]
-    kt = k[1]; kr = k[2]; kθ = k[3]; kϕ = k[4]
+    pt = pcon[1]; pr = pcon[2]; pθ = pcon[3]; pϕ = pcon[4]
+    kt = k[1];    kr = k[2];    kθ = k[3];    kϕ = k[4]
 
     AA = (pt*kr - pr*kt) + spin*(pr*kϕ - pϕ*kr)
     BB = (rs^2 + spin^2) * (pϕ*kθ - pθ*kϕ) - spin * (pt*kθ - pθ*kt)
@@ -278,9 +316,11 @@ end
 # end
 
 
+
 function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     sβ = sign(β)
     m = get_nturns(n, sβ)
+    #println(r, ", ", λ, ", ", η, ", ", α, ", ", β)
     # Get the metric stuff
     gs = metric(g, 0, r, π/2, 0)
     Δs, _, _, _, _ = gs.cache
@@ -291,31 +331,36 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     # Don't worry this uses a special inverse for 4x4 matrices that should be stable
     invgij = inv(gij)
     ηij = components(metric(Minkowski(), 0, 0, 0, 0))
-    # Construct the photon momentum 1-form and vector
+
+    # # Construct the photon momentum 1-form and vector
     pform = momentum_1form(m, sβ, λ, η, spr, Δs, ℛs)
     pcon = invgij*pform
-    println(pcon'*gij*pcon)
 
-    # Construct the ZAMO tetrad
+    # # Construct the ZAMO tetrad
     ezamo = zamo_tetrad(gs)
 
-    # Transform to fluid frame
-    vfield = bam.β
-    Λ = get_Λ(vfield.β, vfield.χ)
-    efluid = ηij*Λ*ηij*ezamo
-    pfluid = ηij*efluid*pform
+    # # Transform to fluid frame
+     vfield = bam.β
+     #Λ = get_Λ(vfield.β, vfield.χ)
+     #efluid = ηij*Λ*ηij*ezamo
+     # -β is inverse and vectors are covariant so apply inverse transform
+     Λ = get_Λ(-vfield.β, vfield.χ)
+     efluid = Λ*ezamo
+     pfluid = ηij*efluid*pform
 
-    z = 1/pfluid[1]
-    lp = abs(pfluid[1]/pfluid[3])
-
-    #Now lets get the polarization vector
-    b = bam.b
-    p3 = @view pfluid[2:end]
-    f3 = cross(p3, magnetic_vector(b))
-    f = SVector(zero(eltype(f3)), f3[1], f3[2], f3[3])
+    @inbounds begin
+        z = 1/pfluid[1]
+        lp = abs(pfluid[1]/pfluid[3])
+        # #Now lets get the polarization vector
+        b = bam.b
+        p3 = SVector(pfluid[2], pfluid[3], pfluid[4])
+    end
+    bvec = magnetic_vector(b)
+    f3 = cross(p3, bvec)
+    f = @inbounds SVector(zero(eltype(f3)), f3[1], f3[2], f3[3])
 
     #Now move back to coordinate basis
-    fkerr = efluid*f
+    fkerr = efluid'*f
     # Constuct PW constant
     κ1, κ2 = penrose_walker(pcon, fkerr, g.spin, r)
 
@@ -328,22 +373,29 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     q = -(eα^2 - eβ^2)*lp*prof
     u = -2*eα*eβ*lp*prof
     i = hypot(q,u)
-
-    return z, i, q, u
+    return z,i,q,u
 end
 
 @inline function get_nturns(n, sβ)
-    return sβ+1+n
+    if sβ > 0
+        return sβ+n
+    else
+        return sβ+n+1
+    end
+end
+
+@inline function minotime(m, cache)
+    _Ir(cache.u₋a², m, cache.K₀, cache.sβ, cache.F₀)
 end
 
 @inline function _Ir(u₋a², m, K₀, sβ, F₀)
-    return 1/sqrt(-u₋a²)*(2*m*K₀ - sβ*F₀)
+    return (2*m*K₀ - sβ*F₀)/sqrt(-u₋a²)
 end
 
 
 function _emission_radius(n::Int, cache::RayCache)
     if cache.interiorflag
-        return _interior_emission_radius(m, cache)
+        return _interior_emission_radius(n, cache)
     else
         return _exterior_emission_radius(n, cache)
     end
@@ -352,28 +404,29 @@ end
 function _exterior_emission_radius(n::Int, cache)
     # get the correct number of turning point
     m = get_nturns(n, cache.sβ)
-    r1,r2,r3,r4 = cache.roots
-    r31,r32,r42,r41 = cache.rootdiffs
+    _,_,r3,r4 = cache.roots
+    r31,_,_,r41 = cache.rootdiffs
 
-    Ir = _Ir(cache.u₋a², m, cache.K₀, cache.sβ, cache.F₀)
+    Ir = minotime(m, cache)
+    Ir > cache.Ir_total && return -one(typeof(Ir)), one(eltype(Ir))
+    spr = sign(cache.Ir_turn - Ir)
     sn = Jacobi.sn(cache.ffac*Ir - cache.f₀, cache.k)
     snsqr = sn^2
     #abs(snsqr) > 1.1 && return NaN*one(eltype(real(sn))), one(eltype(real(sn)))
     r = real((r4*r31 - r3*r41*snsqr)/(r31-r41*snsqr))
-    return r, one(eltype(r))
+    return r, spr
 end
 
-function _interior_emission_radius(n::Int, cache)
+@fastmath function _interior_emission_radius(n::Int, cache)
     # get the correct number of turning point
     m = get_nturns(n, cache.sβ)
-    r1,r2,r3,r4 = cache.roots
+    Ir = minotime(m, cache)
+    Ir > cache.Ir_total && return -one(typeof(Ir)), one(eltype(Ir))
+    r1,r2,_,_ = cache.roots
     rr1 = real(r1)
     rr2 = real(r2)
     Agl = cache.Agl; Bgl = cache.Bgl
-    Ir = _Ir(cache.u₋a², m, cache.K₀, cache.sβ, cache.F₀)
-    spr = sign(cache.Ir_turn - Ir)
-    X = sqrt(Agl*Bgl)*(Ir - spr*cache.I3r)
+    X = sqrt(Agl*Bgl)*(Ir - cache.I3r)
     cn = Jacobi.cn(X, cache.k)
-    Agl, Bgl = cache.Agl, cache.Bgl
-    return ((Bgl*rr2 - Agl*rr1) + (Bgl*rr2+Agl*rr1)*cn) / ((Bgl-Agl)+(Bgl+Agl)*cn), spr
+    return ((Bgl*rr2 - Agl*rr1) + (Bgl*rr2 + Agl*rr1)*cn) / ((Bgl-Agl)+(Bgl+Agl)*cn), one(typeof(X))
 end
