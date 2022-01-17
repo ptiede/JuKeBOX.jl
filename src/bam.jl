@@ -21,6 +21,7 @@ struct Observer{D,O}
 end
 
 
+
 struct BAM{S, FD, V, B}
     nmax::Int
     """spectral index"""
@@ -165,6 +166,9 @@ end
 end
 
 
+
+
+
  function raycache(sβ, λ, η, g::Kerr, o::Observer)
     a = g.spin
     up, um = get_up_um(λ, η, a)
@@ -178,9 +182,8 @@ end
     F₀_sin = clamp(cos(o.inclination)/sqrt(up), -1.0, 1.0)
     F₀ = F(asin(F₀_sin), urat)
     K₀ = K(urat)
-
     # case 3 interior rays
-    if abs(imag(r3)) > 1e-14
+    if abs(imag(r3)) > 1e-12
         return interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
     else
         return exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
@@ -215,22 +218,17 @@ end
 
 
 
+
 function raytrace(α, β, g::Kerr, o::Observer, bam::BAM)
 
     # Find the geodesic charges
     λ, η = get_λ_η(α, β, o.inclination, g.spin)
     # Kill the vortical geodesics
-    η < 0 && return (
-                     zero(eltype(η)), #i
-                     zero(eltype(η)), #q
-                     zero(eltype(η)), #u
-                     )
+    η < 0 && return StokesVector{typeof(λ)}(0,0,0,0)
 
 
     # precompute some stuff that will be constant over ray
-    # TODO: Make sure this isn't causing dynamic dispatch...
     cache = raycache(sign(β), λ, η, g, o)
-
     # create the stokes i,q,u allocators
     T = eltype(λ)
     stokesi = zero(T); stokesq = zero(T); stokesu = zero(T)
@@ -241,7 +239,7 @@ function raytrace(α, β, g::Kerr, o::Observer, bam::BAM)
         stokesu += u
     end
 
-    return stokesi, stokesq, stokesu
+    return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi)))
 end
 
 function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam::BAM)
@@ -249,14 +247,15 @@ function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam:
     T = eltype(r)
     # bail out
     cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
-    r < cache.rp*1.01 && return zero(T), zero(T), zero(T), zero(T)
+    #r < cache.rp*1.01 && return zero(T), zero(T), zero(T), zero(T)
     r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
+    r > 100 && return zero(T), zero(T), zero(T), zero(T)
     return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam)
 end
 
 function momentum_1form(m, sβ, λ, η, spr, Δs, ℛs)
     pt = -1
-    pr = clamp(spr*sqrt(ℛs)/Δs, -10, 10)
+    pr = clamp(spr*sqrt(ℛs)/Δs, -15, 15)
     pϕ = λ
     pθ = (-1)^m*sβ*sqrt(η)
     return SVector(pt, pr, pθ, pϕ)
@@ -310,13 +309,11 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     gs = metric(g, 0, r, π/2, 0)
     Δs, _, _, _, _ = gs.cache
     ℛs = ℛ(gs, λ, η)
-
     # For a 4x4
     gij = components(gs)
     # Don't worry this uses a special inverse for 4x4 matrices that should be stable
     invgij = inv(gij)
     ηij = components(metric(Minkowski(), 0, 0, 0, 0))
-
     # # Construct the photon momentum 1-form and vector
     pform = momentum_1form(m, sβ, λ, η, spr, Δs, ℛs)
     pcon = invgij*pform
@@ -356,9 +353,12 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     eβ = (β*κ1 + ν*κ2) / enorm
     # Get the profile value at the emission radius
     prof = profile(bam, r)*z^(3+bam.α)
-    q = -(eα^2 - eβ^2)*lp*prof
-    u = -2*eα*eβ*lp*prof
-    i = hypot(q,u)
+    # We add a small perturbation to q and u. This prevent taking a
+    # derivative of hypot at (0,0) which gives  a NaN. This is silly because this
+    # occurs when there is no emission so the derivative should be zero there.
+    q = -(eα^2 - eβ^2)*lp*prof + eps()
+    u = -2*eα*eβ*lp*prof + eps()
+    i = hypot(q, u)
     return z,i,q,u
 end
 
