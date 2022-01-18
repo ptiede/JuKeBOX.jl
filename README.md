@@ -24,7 +24,9 @@ Currently JuKeBOX is not a registered package and depend on an additional non-re
       ```julia
       add "https://github.com/ptiede/JuKeBOX.jl"
       ```
-    This will download the main branch which should work
+      
+      
+ This will download the main branch which should work
 
     
 
