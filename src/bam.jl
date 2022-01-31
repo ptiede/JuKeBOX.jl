@@ -4,21 +4,30 @@
 This is a differentiable general relativistic ray-tracer. I think that's it
 """
 
-
-
-
 struct GaussianRing{R,W}
     rpeak::R
     width::W
 end
-
 @inline profile(p::GaussianRing, r) = exp(-4*log(2)*abs2( (r-p.rpeak)/p.width ))
+
+struct DblPower{R,A,B}
+    r0::R
+    a::A
+    b::B
+end
+@inline profile(p::DblPower, r) = (r/p.r0)^p.a/(1+(r/p.r0)^(p.a+p.b))
 
 
 struct Observer{D,O}
     distance::D
     inclination::O
 end
+
+
+abstract type AccretionSymmetry end
+struct NoSymmetry <: AccretionSymmetry end
+struct HasAxisymmetry <: AccretionSymmetry end
+struct HasTimeSymmetry <: AccretionSymmetry end
 
 
 
@@ -308,7 +317,7 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     # Get the metric stuff
     gs = metric(g, 0, r, π/2, 0)
     Δs, _, _, _, _ = gs.cache
-    ℛs = ℛ(gs, λ, η)
+    ℛs = max(ℛ(gs, λ, η), 0.0)
     # For a 4x4
     gij = components(gs)
     # Don't worry this uses a special inverse for 4x4 matrices that should be stable
