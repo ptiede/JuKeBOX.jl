@@ -24,7 +24,7 @@ struct Observer{D,O}
 end
 
 
-abstract type AccretionSymmetry end
+abstract type Symmetry end
 struct NoSymmetry <: AccretionSymmetry end
 struct HasAxisymmetry <: AccretionSymmetry end
 struct HasTimeSymmetry <: AccretionSymmetry end
@@ -52,18 +52,24 @@ function bam(nmax, spin, α, rpeak, width, βv, χ, ι, η=χ+π)
 end
 
 
-struct FluidVelocity{T}
+const VelocityField = TensorField{1}
+
+
+
+struct PlanarBAMVelocity{T}
     β::T
     χ::T
     βr::T
     βϕ::T
-    function FluidVelocity(β, χ)
+    function PlanarBAMVelocity(β, χ)
         T = promote_type(eltype(β), eltype(χ))
         βT, χT = promote(β, χ)
         s,c = sincos(χT)
         return new{T}(βT, χT, βT*c, βT*s)
     end
 end
+
+velocity(v::PlanarBAMVelocity, args...) = SVector()
 
 struct MagneticField{T}
     ι::T

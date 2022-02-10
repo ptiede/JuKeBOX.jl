@@ -8,7 +8,7 @@ using StaticArrays
     return λ, η
 end
 
-@inline function get_up_um(λ, η, a)
+@inline @fastmath function get_up_um(λ, η, a)
     Δ_θ  = 1/2*(1-(η+λ^2)/a^2)
     up = Δ_θ + √(Δ_θ^2 +η/a^2)
     um = Δ_θ - √(Δ_θ^2 +η/a^2)

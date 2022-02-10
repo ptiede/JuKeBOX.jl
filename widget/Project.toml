@@ -1,5 +1,7 @@
 [deps]
+ComradeBase = "6d8c423b-a35f-4ef1-850c-862fe21f82c4"
 Elliptic = "b305315f-e792-5b7a-8f41-49f472929428"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 JuKeBOX = "bcd8bb4e-ee1b-46ca-a648-33f419ff6fce"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
