@@ -247,7 +247,7 @@ function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam:
     T = eltype(r)
     # bail out
     cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
-    #r < cache.rp*1.01 && return zero(T), zero(T), zero(T), zero(T)
+    r < cache.rp*1.01 && return zero(T), zero(T), zero(T), zero(T)
     r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
     r > 100 && return zero(T), zero(T), zero(T), zero(T)
     return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam)
