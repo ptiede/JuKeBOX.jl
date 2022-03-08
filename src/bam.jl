@@ -14,6 +14,17 @@ end
 
 @inline profile(p::GaussianRing, r) = exp(-4*log(2)*abs2( (r-p.rpeak)/p.width ))
 
+"""
+    DblPower
+A double power law for a profile
+"""
+struct DblPower{R,A,B}
+    r0::R
+    a::A
+    b::B
+end
+
+@inline profile(p::DblPower, r) = (r/p.r0)^p.a/(1 + (r/p.r0)^(p.a+p.b))
 
 struct Observer{D,O}
     distance::D
@@ -247,17 +258,26 @@ function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam:
     T = eltype(r)
     # bail out
     cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
-    r < cache.rp*1.01 && return zero(T), zero(T), zero(T), zero(T)
+    r < cache.rp && return zero(T), zero(T), zero(T), zero(T)
     r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
     r > 100 && return zero(T), zero(T), zero(T), zero(T)
     return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam)
 end
 
+function mpow(m)
+    m == 0 && return one(eltype(m))
+    res = -1
+    for _ in 1:m
+        res *= -1
+    end
+    return res
+end
+
 function momentum_1form(m, sβ, λ, η, spr, Δs, ℛs)
     pt = -1
-    pr = clamp(spr*sqrt(ℛs)/Δs, -15, 15)
+    pr = clamp(spr*sqrt(ℛs+1e-10)/Δs, -15, 15)
     pϕ = λ
-    pθ = (-1)^m*sβ*sqrt(η)
+    pθ = mpow(m)*sβ*sqrt(η)
     return SVector(pt, pr, pθ, pϕ)
 end
 
@@ -334,9 +354,9 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
         z = 1/pfluid[1]
         lp = abs(pfluid[1]/pfluid[3])
         # #Now lets get the polarization vector
-        b = bam.b
         p3 = SVector(pfluid[2], pfluid[3], pfluid[4])
     end
+    b = bam.b
     bvec = magnetic_vector(b)
     f3 = cross(p3, bvec)
     f = @inbounds SVector(zero(eltype(f3)), f3[1], f3[2], f3[3])

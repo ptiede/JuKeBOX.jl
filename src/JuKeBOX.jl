@@ -26,7 +26,9 @@ ComradeBase.isprimitive(::Type{<:SimpleModel}) = ComradeBase.IsPrimitive()
 
 
 
-ComradeBase.intensity_point(s::AccretionModel, α, β) = raytrace(α, β, s.g, s.o, s.acc)
+@inline function ComradeBase.intensity_point(s::AccretionModel, α, β)
+    raytrace(-α, β, s.g, s.o, s.acc)
+end
 
 
 include("model_helpers.jl")
