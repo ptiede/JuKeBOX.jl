@@ -260,7 +260,7 @@ function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam:
     cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
     r < cache.rp && return zero(T), zero(T), zero(T), zero(T)
     r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
-    r > 100 && return zero(T), zero(T), zero(T), zero(T)
+    #r > 100 && return zero(T), zero(T), zero(T), zero(T)
     return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam)
 end
 
@@ -275,7 +275,7 @@ end
 
 function momentum_1form(m, sβ, λ, η, spr, Δs, ℛs)
     pt = -1
-    pr = clamp(spr*sqrt(ℛs+1e-10)/Δs, -15, 15)
+    pr = clamp(spr*sqrt(abs(ℛs))/Δs, -15, 15)
     pϕ = λ
     pθ = mpow(m)*sβ*sqrt(η)
     return SVector(pt, pr, pθ, pϕ)
