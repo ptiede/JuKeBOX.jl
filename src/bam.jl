@@ -202,7 +202,7 @@ end
 
 end
 
-function traceimg!(polim, alpha, beta, g, o, bam)
+function traceimg!(polim, alpha, beta, g, θs, o, bam)
     stokesi = polim.I
     stokesq = polim.Q
     stokesu = polim.U
@@ -210,7 +210,7 @@ function traceimg!(polim, alpha, beta, g, o, bam)
         iy,ix = Tuple(C)
         x = alpha[ix]
         y = beta[iy]
-        i,q,u = raytrace(x, y, g, o, bam)
+        i,q,u = raytrace(x, y, g, θs, o, bam, true) + raytrace(x, y, g, θs, o, bam, false)
         stokesi[C] = i
         stokesq[C] = q
         stokesu[C] = u
@@ -220,17 +220,17 @@ end
 
 
 
-function tracepolmap(alpha, beta, g, o, bam)
+function tracepolmap(alpha, beta, g, θs, o, bam)
     nx,ny = length(alpha), length(beta)
     polim = StructArray((I=zeros(ny, nx), Q = zeros(ny, nx), U = zeros(ny, nx)))
-    traceimg!(polim, alpha, beta, g, o, bam)
+    traceimg!(polim, alpha, beta, g, θs, o, bam)
     return polim
 end
 
 
 
 
-function raytrace(α, β, g::Kerr, o::Observer, bam::BAM)
+function raytrace(α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
 
     # Find the geodesic charges
     λ, η = get_λ_η(α, β, o.inclination, g.spin)
@@ -244,7 +244,7 @@ function raytrace(α, β, g::Kerr, o::Observer, bam::BAM)
     T = eltype(λ)
     stokesi = zero(T); stokesq = zero(T); stokesu = zero(T)
     for n in 0:bam.nmax
-        _, i, q, u = trace_nring(n, α, β, cache, g, o, bam)
+        _, i, q, u = trace_nring(n, α, β, cache, g, θs, o, bam, isindir)
         stokesi += i
         stokesq += q
         stokesu += u
@@ -253,15 +253,17 @@ function raytrace(α, β, g::Kerr, o::Observer, bam::BAM)
     return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi)))
 end
 
-function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, o::Observer, bam::BAM)
-    r, spr = _emission_radius(n, cache)
+function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, θs, o::Observer, bam::BAM, isindir)
+    #r, spr = _emission_radius(n, cache)
+    r, νr, _ = rs(α, β, θs, o.inclination, g.spin, isindir, n) 
+    spr = νr ? 1. : -1.
     T = eltype(r)
     # bail out
     cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
     r < cache.rp && return zero(T), zero(T), zero(T), zero(T)
     r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
     #r > 100 && return zero(T), zero(T), zero(T), zero(T)
-    return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam)
+    return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam, θs)
 end
 
 function mpow(m)
@@ -298,18 +300,18 @@ function zamo_tetrad(gs::MetricTensor{M,C}) where {M<:Kerr, C}
                     ]
 end
 
-function penrose_walker(pcon, k, spin, rs)
-    pt = pcon[1]; pr = pcon[2]; pθ = pcon[3]; pϕ = pcon[4]
-    kt = k[1];    kr = k[2];    kθ = k[3];    kϕ = k[4]
-
-    AA = (pt*kr - pr*kt) + spin*(pr*kϕ - pϕ*kr)
-    BB = (rs^2 + spin^2) * (pϕ*kθ - pθ*kϕ) - spin * (pt*kθ - pθ*kt)
-    κ1 = rs * AA
-    κ2 = -rs * BB
-
-    return κ1, κ2
-
-end
+#function penrose_walker(pcon, k, spin, rs)
+#    pt = pcon[1]; pr = pcon[2]; pθ = pcon[3]; pϕ = pcon[4]
+#    kt = k[1];    kr = k[2];    kθ = k[3];    kϕ = k[4]
+#
+#    AA = (pt*kr - pr*kt) + spin*(pr*kϕ - pϕ*kr)
+#    BB = (rs^2 + spin^2) * (pϕ*kθ - pθ*kϕ) - spin * (pt*kθ - pθ*kt)
+#    κ1 = rs * AA
+#    κ2 = -rs * BB
+#
+#    return κ1, κ2
+#
+#end
 
 # function momentum_vec(m, sβ, λ, η, spr, Δs, ℛs, r, a)
 #     pt = -1/r^2*(-a*(a-λ) + (r^2 + a^2)*(r^2 + a^2 - a*λ)/Δs)
@@ -321,9 +323,9 @@ end
 
 
 
-function _emission(n, α, β, λ, η, r, spr, g, o, bam)
+function _emission(n, α, β, λ, η, r, spr, g, o, bam, θs)
     sβ = sign(β)
-    m = get_nturns(n, sβ)
+    #m = get_nturns(n, sβ)
     #println(r, ", ", λ, ", ", η, ", ", α, ", ", β)
     # Get the metric stuff
     gs = metric(g, 0, r, π/2, 0)
@@ -335,7 +337,7 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     invgij = inv(gij)
     ηij = components(metric(Minkowski(), 0, 0, 0, 0))
     # # Construct the photon momentum 1-form and vector
-    pform = momentum_1form(m, sβ, λ, η, spr, Δs, ℛs)
+    pform = momentum_1form(n, sβ, λ, η, spr, Δs, ℛs)
     pcon = invgij*pform
 
     # # Construct the ZAMO tetrad
@@ -364,7 +366,7 @@ function _emission(n, α, β, λ, η, r, spr, g, o, bam)
     #Now move back to coordinate basis
     fkerr = efluid'*f
     # Constuct PW constant
-    κ1, κ2 = penrose_walker(pcon, fkerr, g.spin, r)
+    κ1, κ2 = penrose_walker(r, θs, g.spin, pcon, fkerr)
 
     # screen appearance
     ν = -(α + g.spin * sin(o.inclination))
@@ -399,40 +401,3 @@ end
 end
 
 
-function _emission_radius(n::Int, cache::RayCache)
-    if cache.interiorflag
-        return _interior_emission_radius(n, cache)
-    else
-        return _exterior_emission_radius(n, cache)
-    end
-end
-
-function _exterior_emission_radius(n::Int, cache)
-    # get the correct number of turning point
-    m = get_nturns(n, cache.sβ)
-    _,_,r3,r4 = cache.roots
-    r31,_,_,r41 = cache.rootdiffs
-
-    Ir = minotime(m, cache)
-    Ir > cache.Ir_total && return -one(typeof(Ir)), one(eltype(Ir))
-    spr = sign(cache.Ir_turn - Ir)
-    sn = Jacobi.sn(cache.ffac*Ir - cache.f₀, cache.k)
-    snsqr = sn^2
-    #abs(snsqr) > 1.1 && return NaN*one(eltype(real(sn))), one(eltype(real(sn)))
-    r = real((r4*r31 - r3*r41*snsqr)/(r31-r41*snsqr))
-    return r, spr
-end
-
-@fastmath function _interior_emission_radius(n::Int, cache)
-    # get the correct number of turning point
-    m = get_nturns(n, cache.sβ)
-    Ir = minotime(m, cache)
-    Ir > cache.Ir_total && return -one(typeof(Ir)), one(eltype(Ir))
-    r1,r2,_,_ = cache.roots
-    rr1 = real(r1)
-    rr2 = real(r2)
-    Agl = cache.Agl; Bgl = cache.Bgl
-    X = sqrt(Agl*Bgl)*(Ir - cache.I3r)
-    cn = Jacobi.cn(X, cache.k)
-    return ((Bgl*rr2 - Agl*rr1) + (Bgl*rr2 + Agl*rr1)*cn) / ((Bgl-Agl)+(Bgl+Agl)*cn), one(typeof(X))
-end

@@ -30,7 +30,7 @@ ComradeBase.isprimitive(::Type{<:SimpleModel}) = ComradeBase.IsPrimitive()
     raytrace(-α, β, s.g, s.o, s.acc)
 end
 
-
+include("geodesics.jl")
 include("model_helpers.jl")
 include("metric/kerr.jl")
 include("bam.jl")

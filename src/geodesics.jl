@@ -12,8 +12,7 @@ export get_roots, Gθ, rs, calcPol, η, λ, r_potential, θ_potential, λcrit, �
 αboundary(a::Real, θs::Real) = a*sin(θs)
 
 function βboundary(α::Real, θo::Real, a::Real, θs::Real) 
-    temp_θs = min(θs, π - θs)
-    √max((cos(θo)^2-cos(temp_θs)^2)*(α^2-a^2+a^2*cos(temp_θs)^2)/(cos(temp_θs)^2 -1), 0.0)
+    √max((cos(θo)^2-cos(θs)^2)*(α^2-a^2+a^2*cos(θs)^2)/(cos(θs)^2 -1), 0.0)
 end
 
 
@@ -140,13 +139,15 @@ function get_root_diffs(r1, r2, r3, r4)
 end
 
 function rs(α, β, θs, θo, a, isindir, n) 
-    if abs(cos(θs)) > cos(θo)
+
+    if cos(θs) > abs(cos(θo))
         αmin = αboundary(a, θs)
         βbound = (abs(α) >= αmin ? βboundary(α, θo, a, θs) : 0.)
         if abs(β) < βbound
             return 0., true, 4
         end
     end
+    #βtemp = ((θo > π/2) ⊻ (n%2 == 1)) ? -β : β
     ηtemp = η(α, β, θo, a)
     λtemp = λ(α, θo)
     τ = Gθ(α, β, a, θs, θo, isindir, n)[1]
@@ -187,7 +188,7 @@ function _rs(η::Real, λ::Real, a::Real, τ::Real)
   if numreals == 4. #case 1 & 2
     if r4 >= rh && τ > 2I2r_turn(root_diffs) # invalid case1
       ans = 0
-    elseif r4 < rh && τ > I2r(roots, root_diffs, rh, false) # invalid case2
+    elseif r4 < rh && τ > I2r(roots, root_diffs, rh, true) # invalid case2
       ans = 0
     else
       k = (r32*r41) / (r31*r42)
@@ -201,8 +202,8 @@ function _rs(η::Real, λ::Real, a::Real, τ::Real)
     end
   elseif numreals == 2. #case3
 
-    if τ > I3r(roots, root_diffs, rh)
-      ans = 0.
+    if τ > I3r_full(root_diffs)#(roots, root_diffs, rh)
+      ans = 0
     else
       A = √real(r32*r42)
       B = √real(r31*r41)
@@ -290,7 +291,7 @@ function I3r(roots, root_diffs, rs)
   Ir_s = 2/√real(A*B)*Elliptic.F(real(acos(x3_s)), k3)
   Ir_full = I3r_full(root_diffs)
 
-  return Ir_full - Ir_s
+  return abs(Ir_full - Ir_s)
 end
 
 function I4r_full(roots, root_diffs)
@@ -410,14 +411,14 @@ function Gθ(α::Real, β::Real, a::Real, θs::Real, θo::Real, isindir::Bool, n
       #minotime = real(isindir ? (n+1)*Ghat - Go - Gs : n*Ghat + Go - Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
     #else
     νθ =  θo < π/2 ? -1 : 1
-    minotime = real(isindir ? (n+1)*Ghat - sign(β)*Go + νθ*Gs : n*Ghat - sign(β)*Go + νθ*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
+    minotime = real(isindir ? (n+1)*Ghat -sign(β)*Go + (n%2==1 ? -1 : 1)*νθ*Gs : n*Ghat - sign(β)*Go + (n%2==1 ? -1 : 1)*νθ*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
     #end
   else
     #minotime = real((isindir ? (-cos(θo) > cos(θs) ? (n+1)*Ghat+(Gs + Go) : (n+1)*Ghat-(Gs + Go)) : (β < 0 ? n*Ghat + Gs + Go : n*Ghat + Gs - Go) ))
-    minotime = real((isindir ? (n+1)*Ghat-(Gs + Go) : (β < 0 ? n*Ghat + Gs + Go : n*Ghat + Gs - Go) ))
+    minotime = real((isindir ? (n+1)*Ghat-(Gs + sign(β)*Go) : (β < 0 ? n*Ghat + Gs - (isvortical ? -1 : 1)*sign(β)*Go : n*Ghat + Gs - sign(β)*Go) ))
   end
 
-  if (β < 0 && cos(θs) > abs(cos(θo)) && !isvortical) || (isvortical && θo >= π/2)
+  if (((β < 0) ⊻ (n%2==1)) && cos(θs) > abs(cos(θo)) && !isvortical) || (isvortical && θo >= π/2)
     return Inf, isvortical
   end
   return minotime, isvortical
@@ -512,13 +513,14 @@ function jac_zamo2fluid_ud(β::Real, θ::Real, φ::Real)
     ]
 end
 
-function penrose_walker(r::Real, θ::Real, a::Real, p_u::Vector, f_u::Vector)# Eq 6 arXiv:2001.08750v1
+function penrose_walker(r::Real, θ::Real, a::Real, p_u, f_u)# Eq 6 arXiv:2001.08750v1
     pt, pr, pϕ, pθ = p_u
     ft, fr, fϕ, fθ = f_u
 
     A = pt*fr - pr*ft + a*sin(θ)^2(pr*fϕ - pϕ*fr)
     B = ((r^2 + a^2)*(pϕ*fθ-pθ*fϕ) - a*(pt*fθ - pθ*ft))*sin(θ)
-    return (A - B*im)*(r - a*cos(θ)*im)
+    κ = (A - B*im)*(r - a*cos(θ)*im)
+    return real(κ), imag(κ)
 end
 
 function screen_polarisation(κ::Complex, θ::Real, a::Real, α::Real, β::Real)# Eq 31 10.1103/PhysRevD.104.044060
