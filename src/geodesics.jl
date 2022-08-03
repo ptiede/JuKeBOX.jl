@@ -205,8 +205,8 @@ function _rs(η::Real, λ::Real, a::Real, τ::Real)
     if τ > I3r_full(root_diffs)#(roots, root_diffs, rh)
       ans = 0
     else
-      A = √real(r32*r42)
-      B = √real(r31*r41)
+      A = √abs(r32*r42)
+      B = √abs(r31*r41)
       k =  real(((A + B)^2 - r21^2)/(4*A*B))
 
       fo = Elliptic.F(acos((A-B)/(A+B)), k)
@@ -318,6 +318,9 @@ function I4r(roots, root_diffs, rs)
   _, r31, r32, r41, r42 = root_diffs
 
 
+  if real(r32*r41) < 0 || real(r31*r42) < 0 
+    return 0
+  end
   C = √real(r31*r42)
   D = √real(r32*r41)
   k4 = 4C*D/(C+D)^2
@@ -406,17 +409,8 @@ function Gθ(α::Real, β::Real, a::Real, θs::Real, θo::Real, isindir::Bool, n
         end
   end
 
-  if cos(θs) < abs(cos(θo))
-    #if θo < π/2
-      #minotime = real(isindir ? (n+1)*Ghat - Go - Gs : n*Ghat + Go - Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
-    #else
-    νθ =  θo < π/2 ? -1 : 1
-    minotime = real(isindir ? (n+1)*Ghat -sign(β)*Go + (n%2==1 ? -1 : 1)*νθ*Gs : n*Ghat - sign(β)*Go + (n%2==1 ? -1 : 1)*νθ*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
-    #end
-  else
-    #minotime = real((isindir ? (-cos(θo) > cos(θs) ? (n+1)*Ghat+(Gs + Go) : (n+1)*Ghat-(Gs + Go)) : (β < 0 ? n*Ghat + Gs + Go : n*Ghat + Gs - Go) ))
-    minotime = real((isindir ? (n+1)*Ghat-(Gs + sign(β)*Go) : (β < 0 ? n*Ghat + Gs - (isvortical ? -1 : 1)*sign(β)*Go : n*Ghat + Gs - sign(β)*Go) ))
-  end
+  νθ =  cos(θs) < abs(cos(θo)) ? (θo > θs) ⊻ (n%2==1) : !isindir
+  minotime = real(isindir ? (n+1)*Ghat -sign(β)*Go + (νθ ? 1 : -1)*Gs : n*Ghat - sign(β)*Go + (νθ ? 1 : -1)*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
 
   if (((β < 0) ⊻ (n%2==1)) && cos(θs) > abs(cos(θo)) && !isvortical) || (isvortical && θo >= π/2)
     return Inf, isvortical
@@ -429,7 +423,7 @@ end
 ##----------------------------------------------------------------------------------------------------------------------
 MinkowskiMet() = [-1. 0. 0. 0.; 0. 1. 0. 0.; 0. 0. 1. 0.; 0. 0. 0. 1.]
 
-p_boyer_lindquist_d(r::Real, θ::Real, a::Real, η::Real, λ::Real, νr::Bool, νθ::Bool) = [-1,(νr ? 1 : -1)*√(r_potential(η, λ, a, r))/Δ(r, a), λ, (νθ ? 1 : -1)*√θ_potential(η, λ, a, θ)]
+p_boyer_lindquist_d(r::Real, θ::Real, a::Real, η::Real, λ::Real, νr::Bool, νθ::Bool) = [-1,(νr ? 1 : -1)*√max(0., r_potential(η, λ, a, r))/Δ(r, a), λ, (νθ ? 1 : -1)*√max(0.,θ_potential(η, λ, a, θ))]
 
 """
     kerr_met_uu(r::Real, θ::Real, a::Real)
@@ -520,8 +514,9 @@ function penrose_walker(r::Real, θ::Real, a::Real, p_u, f_u)# Eq 6 arXiv:2001.0
     A = pt*fr - pr*ft + a*sin(θ)^2(pr*fϕ - pϕ*fr)
     B = ((r^2 + a^2)*(pϕ*fθ-pθ*fϕ) - a*(pt*fθ - pθ*ft))*sin(θ)
     κ = (A - B*im)*(r - a*cos(θ)*im)
+
     return real(κ), imag(κ)
-end
+  end
 
 function screen_polarisation(κ::Complex, θ::Real, a::Real, α::Real, β::Real)# Eq 31 10.1103/PhysRevD.104.044060
     #TODO: Check which is real and which is imaginary
@@ -539,10 +534,12 @@ end
 evpa(fα,fβ) = atan(-fα, fβ)
 
 
-function calcPol(α::Real, β::Real, ri::Real, θs::Real, θo::Real, a::Real, B::Vector{Float64}, βfluid::Vector{Float64}, νr::Bool, θsign::Bool)
-    βv::Real = βfluid[1]
-    θz::Real = βfluid[2]
-    ϕz::Real = βfluid[3]
+function calcPol(α::Real, β::Real, ri::Real, θs::Real, θo::Real, a::Real, Mag, βfluid, νr::Bool, θsign::Bool)
+    βv::Real = βfluid.β
+    θz::Real = π/2#βfluid.
+    ϕz::Real = βfluid.χ
+
+    B = Vector{Float64}([Mag.br, Mag.bϕ, Mag.bz])
 
     ηtemp::Real = η(α, β, θo, a)
     λtemp::Real = λ(α, θo)
@@ -554,7 +551,7 @@ function calcPol(α::Real, β::Real, ri::Real, θs::Real, θo::Real, a::Real, B:
     p_fluid_u = jac_zamo2fluid_ud(βv, θz, ϕz) *  p_zamo_u
     f_fluid_u = similar(p_fluid_u)
     vec = cross(normalize(p_fluid_u[begin+1:end]), B)
-    norm = √dot(vec, vec)
+    norm = √dot(vec, vec) + eps()
     #f_fluid_u = cat([0], cross(normalize(p_fluid_u[begin+1:end]), B), dims=1)
     f_fluid_u = cat([0], vec / norm, dims=1)
     pt = p_zamo_u[1]
@@ -562,17 +559,18 @@ function calcPol(α::Real, β::Real, ri::Real, θs::Real, θo::Real, a::Real, B:
     mag = √abs(norm^2 / (pz*pt))
     f_zamo_u = jac_zamo2fluid_ud(-βv, θz, ϕz) * f_fluid_u
     f_bl_u = jac_zamo2bl_ud(ri, θs, a) * f_zamo_u
-    κ = penrose_walker(ri, θs, a, p_bl_u, f_bl_u)
-    f_screen = screen_polarisation(κ, θo, a, α, β)
+    κ1, κ2 = penrose_walker(ri, θs, a, p_bl_u, f_bl_u)
+    return κ1, κ2, 1/p_fluid_u[1], abs(p_fluid_u[1]/p_fluid_u[4])
+    #f_screen = screen_polarisation(κ, θo, a, α, β)
 
-    fα = f_screen[1] 
-    fβ = f_screen[2] 
+    #fα = f_screen[1] 
+    #fβ = f_screen[2] 
 
-    evpatemp = atan(fα, fβ)
-    sinϕ = sin(evpatemp) #* mag
-    cosϕ = cos(evpatemp) #* mag
+    #evpatemp = atan(fα, fβ)
+    #sinϕ = sin(evpatemp) #* mag
+    #cosϕ = cos(evpatemp) #* mag
 
-    return  sinϕ, cosϕ
+    #return  sinϕ, cosϕ
 end
 
 

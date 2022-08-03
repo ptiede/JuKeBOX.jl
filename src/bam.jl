@@ -5,8 +5,6 @@ This is a differentiable general relativistic ray-tracer. I think that's it
 """
 
 
-
-
 struct GaussianRing{R,W}
     rpeak::R
     width::W
@@ -163,11 +161,11 @@ end
  function exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F0, K0, a)
     r31, r32, r42, r41 = rootdiffs
     k = real(r32*r41/(r31*r42))
-    f₀ = F(real(asin(sqrt(r31/r41))), k)
+    f₀ =1# F(real(asin(sqrt(r31/r41))), k)
     rp = 1+sqrt(1-a^2)
-    Ir_turn = real(2/sqrt(r31*r42)*f₀)
-    Ir_total = 2*Ir_turn
-    ffac = 1/2*sqrt(real(r31*r42))
+    Ir_turn = 1#real(2/sqrt(r31*r42)*f₀)
+    Ir_total = !#2*Ir_turn
+    ffac = 1# 1/2*sqrt(real(r31*r42))
     T = typeof(λ)
     return RayCache(false, sβ, λ, η, u₋a², roots, rootdiffs, F0, K0,
                             k, Ir_total,
@@ -190,9 +188,9 @@ end
     r1,r2,r3,r4 = roots
     rootdiffs = (r3-r1, r3-r2, r4-r2, r4-r1)
 
-    F₀_sin = clamp(cos(o.inclination)/sqrt(up), -1.0, 1.0)
-    F₀ = F(asin(F₀_sin), urat)
-    K₀ = K(urat)
+    F₀_sin = 1#clamp(cos(o.inclination)/sqrt(up), -1.0, 1.0)
+    F₀ = 1#F(asin(F₀_sin), urat)
+    K₀ = 1#K(urat)
     # case 3 interior rays
     return exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
 
@@ -229,18 +227,18 @@ end
 function raytrace(α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
 
     # Find the geodesic charges
-    λ, η = get_λ_η(α, β, o.inclination, g.spin)
+    # λ, η = get_λ_η(α, β, o.inclination, g.spin)
     # Kill the vortical geodesics
-    η < 0 && return StokesVector{typeof(λ)}(0,0,0,0)
+    #η < 0 && return StokesVector{typeof(λ)}(0,0,0,0)
 
 
     # precompute some stuff that will be constant over ray
-    cache = raycache(sign(β), λ, η, g, o)
+    #cache = raycache(sign(β), λ, η, g, o)
     # create the stokes i,q,u allocators
-    T = eltype(λ)
-    stokesi = zero(T); stokesq = zero(T); stokesu = zero(T)
+    
+    stokesi = 0.; stokesq = 0.; stokesu = 0.
     for n in 0:bam.nmax
-        _, i, q, u = trace_nring(n, α, β, cache, g, θs, o, bam, isindir)
+        _, i, q, u = trace_nring(n, α, β, g, θs, o, bam, isindir)
         stokesi += i
         stokesq += q
         stokesu += u
@@ -249,17 +247,18 @@ function raytrace(α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
     return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi)))
 end
 
-function trace_nring(n::Int, α, β, cache::RayCache, g::Kerr, θs, o::Observer, bam::BAM, isindir)
+function trace_nring(n::Int, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
     #r, spr = _emission_radius(n, cache)
     r, νr, _ = rs(α, β, θs, o.inclination, g.spin, isindir, n) 
-    spr = νr ? 1. : -1.
     T = eltype(r)
+
+    νθ =  cos(θs)< abs(cos(o.inclination)) ? (o.inclination>θs) ⊻ (n%2==1) : !isindir
     # bail out
-    cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
-    r < cache.rp && return zero(T), zero(T), zero(T), zero(T)
-    r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
+    #cache.k > 1 && return zero(T), zero(T), zero(T), zero(T)
+    r < 1+ √(1-g.spin^2) && return zero(T), zero(T), zero(T), zero(T)
+    #r < zero(T) && return zero(T), zero(T), zero(T), zero(T)
     #r > 100 && return zero(T), zero(T), zero(T), zero(T)
-    return _emission(n, α, β, cache.λ, cache.η, r, spr, g, o, bam, θs)
+    return _emission(α, β, r, νr, νθ, g, o, bam, θs)
 end
 
 function mpow(m)
@@ -319,65 +318,23 @@ end
 
 
 
-function _emission(n, α, β, λ, η, r, spr, g, o, bam, θs)
-    sβ = sign(β)
-    #m = get_nturns(n, sβ)
-    #println(r, ", ", λ, ", ", η, ", ", α, ", ", β)
-    # Get the metric stuff
-    gs = metric(g, 0, r, π/2, 0)
-    Δs, _, _, _, _ = gs.cache
-    ℛs = ℛ(gs, λ, η)
-    # For a 4x4
-    gij = components(gs)
-    # Don't worry this uses a special inverse for 4x4 matrices that should be stable
-    invgij = inv(gij)
-    ηij = components(metric(Minkowski(), 0, 0, 0, 0))
-    # # Construct the photon momentum 1-form and vector
-    pform = momentum_1form(n, sβ, λ, η, spr, Δs, ℛs)
-    pcon = invgij*pform
-
-    # # Construct the ZAMO tetrad
-    ezamo = zamo_tetrad(gs)
-
-    # # Transform to fluid frame
-     vfield = bam.β
-     #Λ = get_Λ(vfield.β, vfield.χ)
-     #efluid = ηij*Λ*ηij*ezamo
-     # -β is inverse and vectors are covariant so apply inverse transform
-     Λ = get_Λ(-vfield.β, vfield.χ)
-     efluid = Λ*ezamo
-     pfluid = ηij*efluid*pform
-
-    @inbounds begin
-        z = 1/pfluid[1]
-        lp = abs(pfluid[1]/pfluid[3])
-        # #Now lets get the polarization vector
-        p3 = SVector(pfluid[2], pfluid[3], pfluid[4])
-    end
-    b = bam.b
-    bvec = magnetic_vector(b)
-    f3 = cross(p3, bvec)
-    f = @inbounds SVector(zero(eltype(f3)), f3[1], f3[2], f3[3])
-
-    #Now move back to coordinate basis
-    fkerr = efluid'*f
-    # Constuct PW constant
-    κ1, κ2 = penrose_walker(r, θs, g.spin, pcon, fkerr)
+function _emission(α, β, r, νr, νθ, g, o, bam, θs)
+    κ1, κ2, redshift, lp = calcPol(α, β, r, θs, o.inclination, g.spin, bam.b, bam.β, νr, νθ)
 
     # screen appearance
     ν = -(α + g.spin * sin(o.inclination))
-    enorm = (ν^2 + β^2)*sqrt(κ1^2+κ2^2)
+    enorm = (ν^2 + β^2)*sqrt(κ1^2+κ2^2) + eps()
     eα = (β*κ2 - ν*κ1) / enorm
     eβ = (β*κ1 + ν*κ2) / enorm
     # Get the profile value at the emission radius
-    prof = profile(bam, r)*z^(3+bam.α)
+    prof = profile(bam, r)*redshift^(3+bam.α)
     # We add a small perturbation to q and u. This prevent taking a
     # derivative of hypot at (0,0) which gives  a NaN. This is silly because this
     # occurs when there is no emission so the derivative should be zero there.
     q = -(eα^2 - eβ^2)*lp*prof + eps()
     u = -2*eα*eβ*lp*prof + eps()
     i = hypot(q, u)
-    return z,i,q,u
+    return redshift,i,q,u
 end
 
 @inline function get_nturns(n, sβ)
