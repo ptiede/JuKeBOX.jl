@@ -194,11 +194,7 @@ end
     F₀ = F(asin(F₀_sin), urat)
     K₀ = K(urat)
     # case 3 interior rays
-    if abs(imag(r3)) > 1e-12
-        return interior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
-    else
-        return exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
-    end
+    return exterior_ray_cache(sβ, λ, η, u₋a², roots, rootdiffs, F₀, K₀, a)
 
 end
 

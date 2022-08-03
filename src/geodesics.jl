@@ -1,4 +1,4 @@
-import Elliptic, Roots
+import Elliptic
 using LinearAlgebra, StaticArrays
 export get_roots, Gθ, rs, calcPol, η, λ, r_potential, θ_potential, λcrit, ηcrit, ϕ, Ipm, Δ, Σ, A
 ##
