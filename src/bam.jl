@@ -319,7 +319,11 @@ end
 
 
 function _emission(α, β, r, νr, νθ, g, o, bam, θs)
-    κ1, κ2, redshift, lp = calcPol(α, β, r, θs, o.inclination, g.spin, bam.b, bam.β, νr, νθ)
+    mag_field = bam.b
+    fluid_vel = bam.β
+    B = @SVector [mag_field.br, mag_field.bϕ, mag_field.bz]
+    fluidβ = @SVector[fluid_vel.β, 0. ,fluid_vel. χ]
+    κ1, κ2, redshift, lp = calcPol(α, β, r,  θs, o.inclination, g.spin, B, fluidβ , νr, νθ)
 
     # screen appearance
     ν = -(α + g.spin * sin(o.inclination))
