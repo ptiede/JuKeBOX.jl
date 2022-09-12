@@ -89,7 +89,7 @@ end
 
 
 @inline function magnetic_vector(b::MagneticField)
-    return SVector(b.br, b.bz, b.bϕ)
+    return SVector(b.br, b.bϕ, b.bz)
 end
 
 @inline function profile(b::BAM, r)
@@ -121,9 +121,6 @@ end
     ffac
     Ir_turn
 end
-
-
-
 
 
 @inline function _I3(Agl, Bgl, k)
@@ -319,11 +316,9 @@ end
 
 
 function _emission(α, β, r, νr, νθ, g, o, bam, θs)
-    mag_field = bam.b
     fluid_vel = bam.β
-    B = @SVector [mag_field.br, mag_field.bϕ, mag_field.bz]
-    fluidβ = @SVector[fluid_vel.β, 0. ,fluid_vel. χ]
-    κ1, κ2, redshift, lp = calcPol(α, β, r,  θs, o.inclination, g.spin, B, fluidβ , νr, νθ)
+    fluidβ = @SVector[fluid_vel.β, π/2. , fluid_vel.χ]
+    κ1, κ2, redshift, lp = calcPol(α, β, r,  θs, o.inclination, g.spin, magnetic_vector(bam.b), fluidβ , νr, νθ)
 
     # screen appearance
     ν = -(α + g.spin * sin(o.inclination))

@@ -49,8 +49,10 @@ Theta potential of a kerr blackhole
 """
 θ_potential(η, λ, a, θ) = η + a^2*cos(θ)^2 - λ^2*cot(θ)^2
 
+sort_roots(roots) = NTuple{4,ComplexF64}(sort(sort([roots...],by=x->abs(imag(x)),rev=true),by=y->real(y)))
+
 """
-  get_roots(η, λ, a)
+  get_roots(η::Float64, λ::Float64, a::Float64)
 
 Returns roots of r⁴ + (a²-η-λ²)r² + 2(η+(a-λ)²)r - a²η
 
@@ -60,7 +62,7 @@ Returns roots of r⁴ + (a²-η-λ²)r² + 2(η+(a-λ)²)r - a²η
 
   `a` : Blackhole spin
 """
-function get_roots(η, λ, a)
+function get_roots(η::Float64, λ::Float64, a::Float64)
     A = a^2 - η - λ^2
     B = 2(η + (λ-a)^2)
     C = -a^2*η   
@@ -86,7 +88,7 @@ function get_roots(η, λ, a)
     r3 = ((2ξ0)^(1/2) - (-(2A + 2ξ0 + (√2B)/(√ξ0)))^(1/2))/2
     r4 = ((2ξ0)^(1/2) + (-(2A + 2ξ0 + (√2B)/(√ξ0)))^(1/2))/2
 
-    return [r1, r2, r3, r4]
+    return r1, r2, r3, r4
 end
 
 Δ(r, a) = r^2 -2r + a^2
@@ -168,152 +170,185 @@ Emission radius for emission that lies outside the photon ring and whose ray int
   `τ` : Mino Time
 """
 function _rs(η, λ, a, τ)
-  ans = 0
+  ans = 0.0
+  num = 0.0
+  fo = 0.0
+  k = 0.0
   νr = true
 
-  r1, r2, r3, r4 = get_roots(η, λ, a)
+  roots = get_roots(η, λ, a)
   rh = 1 + √(1-a^2)
-  numreals = (abs(imag(r1)) > 1e-10 ? 0 : 2) + (abs(imag(r3)) > 1e-10 ? 0 : 2)
+  numreals::Int = (abs(imag(roots[1])) > 1e-10 ? 0 : 2) + (abs(imag(roots[3])) > 1e-10 ? 0 : 2)
+  num::ComplexF64 = 0.0
+  den::ComplexF64 = 0.0
 
-  if numreals == 4
-    r1, r2, r3, r4 = real(r1), real(r2), real(r3), real(r4)
-  elseif abs(imag(r4)) < 1e-10
-     r2,r3,r4 = r4,r2,r3
-  end
 
-  roots = [r1, r2, r3, r4]
-  r21, r31, r32, r41, r42 = get_root_diffs(r1, r2, r3, r4)
-  root_diffs = [r21, r31, r32, r41, r42]
-
-  if numreals == 4. #case 1 & 2
-    if r4 >= rh && τ > 2I2r_turn(root_diffs) # invalid case1
-      ans = 0
-    elseif r4 < rh && τ > I2r(roots, root_diffs, rh, true) # invalid case2
-      ans = 0
-    else
-      k = (r32*r41) / (r31*r42)
-
-      fo = Elliptic.F(asin(√(r31/r41)), k)
-      X2 = fo - √(r31*r42) * τ / 2
-      sn = r41 * Elliptic.Jacobi.sn(X2, k)^2
-
-      ans = (r31*r4 - r3*sn) / (r31 - sn)
-      νr = X2 > 0
+  if numreals == 4 #case 1 & 2
+    ans, νr = _rs_case1(real.(roots), rh, τ)
+  elseif numreals == 2 #case3
+    if abs(imag(roots[4])) < 1e-10
+     roots= (roots[1], roots[4],roots[2],roots[3])
     end
-  elseif numreals == 2. #case3
-
-    if τ > I3r_full(root_diffs)#(roots, root_diffs, rh)
-      ans = 0
-    else
-      A = √abs(r32*r42)
-      B = √abs(r31*r41)
-      k =  real(((A + B)^2 - r21^2)/(4*A*B))
-
-      fo = Elliptic.F(acos((A-B)/(A+B)), k)
-      X3  = real(fo - √(A*B)*τ)
-      cn = Elliptic.Jacobi.cn(X3, k)
-      num = -A*r1 + B*r2 + (A*r1+B*r2)*cn
-      den = -A + B + (A+B)*cn
-
-      ans = real(num/den)
-      νr = X3 > 0 
-    end
+    ans, νr = _rs_case3(roots, τ)
   else #case 4
-    if τ > I4r(roots, root_diffs, rh)
-      ans = 0
-    else
-      a2 = abs(imag(r1))
-      b1 = real(r4)
-      C = √real(r31*r42)
-      D = √real(r32*r41)
-      k4 = 4*C*D/(C+D)^2
-      
-      go = √(4a2^2 - (C-D)^2) / ((C+D)^2 - 4a2^2)
-      fo = 2/(C+D)*Elliptic.F(π/2 + atan(go), k4) 
-      X4 =  (C+D)/2*(fo - τ)
-      num = go - Elliptic.Jacobi.sc(X4, k4)
-      den = 1 + go*Elliptic.Jacobi.sc(X4, k4)
-
-      ans = -(a2*num/den + b1)
-      νr = X4 > 0 
+    ans, νr = _rs_case4(roots, rh, τ)
     end
-  end
   return ans, νr, numreals
 end
 
-function I2r_turn(root_diffs::AbstractVector{Float64})
+function _rs_case1(roots, rh, τ)
+  ans = 0.0
+  νr = true
+  _, _, r3, r4 = roots
+  root_diffs = get_root_diffs(roots...)
+  _, r31, r32, r41, r42 = root_diffs
+
+  if r4 >= rh && τ > 2I2r_turn(root_diffs) # invalid case1
+    ans = 0.
+  elseif r4 < rh && τ > I2r(roots, root_diffs, rh, true) # invalid case2
+    ans = 0.
+  else
+    k = (r32*r41) / (r31*r42)
+
+    fo = Elliptic.F(asin(√(r31/r41)), k)
+    X2 = fo - √(r31*r42) * τ / 2
+    sn = r41 * Elliptic.Jacobi.sn(X2, k)^2
+
+    ans = (r31*r4 - r3*sn) / (r31 - sn)
+    νr = X2 > 0
+  end
+  return ans::Float64, νr::Bool
+end
+function _rs_case3(roots, τ)
+  ans = 0.0
+  νr = true
+  r1, r2, _, _ = roots
+  root_diffs = get_root_diffs(roots...)
+  r21, r31, r32, r41, r42 = root_diffs
+
+  if τ > I3r_full(root_diffs)#(roots, root_diffs, rh)
+    ans = 0.
+  else
+    A = √abs(r32*r42)
+    B = √abs(r31*r41)
+    k =  real(((A + B)^2 - r21^2)/(4*A*B))
+
+    fo = Elliptic.F(acos((A-B)/(A+B)), k)
+    X3  = real(fo - √(A*B)*τ)
+    cn = Elliptic.Jacobi.cn(X3, k)
+    num = -A*r1 + B*r2 + (A*r1+B*r2)*cn
+    den = -A + B + (A+B)*cn
+
+    ans = real(num/den)
+    νr = X3 > 0 
+  end
+
+    return ans, νr
+end
+function _rs_case4(roots, rh, τ)
+  ans = 0.0
+  νr = true
+
+  r1, _, _, r4 = roots
+  root_diffs = get_root_diffs(roots...)
+  _, r31, r32, r41, r42 = root_diffs
+
+
+  if τ > I4r(roots, root_diffs, rh)
+    ans = 0.
+  else
+    a2 = abs(imag(r1))
+    b1 = real(r4)
+    C = √real(r31*r42)
+    D = √real(r32*r41)
+    k4 = 4*C*D/(C+D)^2
+    
+    go = √(4a2^2 - (C-D)^2) / ((C+D)^2 - 4a2^2)
+    fo = 2/(C+D)*Elliptic.F(π/2 + atan(go), k4) 
+    X4 =  (C+D)/2*(fo - τ)
+    num = go - Elliptic.Jacobi.sc(X4, k4)
+    den = 1 + go*Elliptic.Jacobi.sc(X4, k4)
+
+    ans = -(a2*num/den + b1)
+    νr = X4 > 0 
+  end
+  return ans, νr
+end
+
+
+function I2r_turn(root_diffs::NTuple{5})
   _, r31, r32, r41, r42 = root_diffs
   k = r32*r41/(r31*r42)
   return 2/√real(r31*r42)*Elliptic.F(asin(√(r31/r41)), k)
 end
 
-function I2r(roots::AbstractVector{Float64}, root_diffs::AbstractVector{Float64}, rs, isindir)
+function I2r(roots::NTuple{4}, root_diffs::NTuple{5}, rs, isindir)
   _, _, r3, r4 = roots
   _, r31, r32, r41, r42 = root_diffs
 
   k = r32*r41/(r31*r42)
   x2_s = √((rs-r4)/(rs-r3)*r31/r41)
-  if !(-1 < x2_s < 1); return 0.; end
-  Ir_s = 2/√real(r31*r42)*Elliptic.F(asin(x2_s), k)
+  if !(-1.0 < x2_s < 1.0); return 0.0; end
+  Ir_s = 2.0/√real(r31*r42)*Elliptic.F(asin(x2_s), k)
   Ir_turn = I2r_turn(root_diffs)
 
   return Ir_turn + (isindir ? Ir_s : -Ir_s)
 end
 
-function I3r_full(root_diffs)
+function I3r_full(root_diffs::NTuple{5})
   r21, r31, r32, r41, r42 = map(abs, root_diffs)
   A2 = r32*r42
   B2 = r31*r41
-  if A2 < 0. || B2 < 0; return Inf; end
+  if A2 < 0.0 || B2 < 0.0; return Inf; end
 
   A, B = √A2, √B2
-  k3 = ((A+B)^2 - r21^2)/(4A*B)
+  k3 = ((A+B)^2.0 - r21^2.0)/(4A*B)
 
   temprat = B/A
-  x3_turn = real(√((1+0im - temprat)/(1 + temprat)))
-  return 2/√real(A*B)*Elliptic.F(acos(x3_turn), k3)
+  x3_turn = real(√((1.0+0.0im - temprat)/(1.0 + temprat)))
+  return 2.0/√real(A*B)*Elliptic.F(acos(x3_turn), k3)
 end
 
-function I3r(roots, root_diffs, rs)
+function I3r(roots::NTuple{4}, root_diffs::NTuple{5}, rs)
   r1, r2, _, _ = roots
   r21, r31, r32, r41, r42 = root_diffs
 
   A2 = real(r32*r42)
   B2 = real(r31*r41)
-  if A2 < 0. || B2 < 0; return 0; end
+  if A2 < 0.0 || B2 < 0.0; return 0.0; end
 
   A, B = √A2, √B2
 
 
-  k3 = real(((A+B)^2 - r21^2)/(4A*B))
+  k3 = real(((A+B)^2.0 - r21^2.0)/(4.0A*B))
   temprat = B*(rs-r2)/(A*(rs-r1))
-  x3_s = real(√((1+0im - temprat)/(1 + temprat)))
-  Ir_s = 2/√real(A*B)*Elliptic.F(real(acos(x3_s)), k3)
+  x3_s = real(√((1.0+0.0im - temprat)/(1.0 + temprat)))
+  Ir_s = 2.0/√real(A*B)*Elliptic.F(real(acos(x3_s)), k3)
   Ir_full = I3r_full(root_diffs)
 
   return abs(Ir_full - Ir_s)
 end
 
-function I4r_full(roots, root_diffs)
+function I4r_full(roots::NTuple{4}, root_diffs::NTuple{5})
   r1, _, _, r4 = roots
   _, r31, r32, r41, r42 = root_diffs
 
   try
     C = √real(r31*r42)
     D = √real(r32*r41)
-    k4 = 4C*D/(C+D)^2
+    k4 = 4C*D/(C+D)^2.0
     a2 = abs(imag(r1))
 
-    k4 = 4*C*D/(C+D)^2
+    k4 = 4*C*D/(C+D)^2.0
     
-    go = √max((4a2^2 - (C-D)^2) / ((C+D)^2 - 4a2^2), 0.)
-    return 2/(C+D)*Elliptic.F(π/2 + atan(go), k4) 
+    go = √max((4a2^2.0 - (C-D)^2.0) / ((C+D)^2.0 - 4a2^2.0), 0.0)
+    return 2.0/(C+D)*Elliptic.F(π/2.0 + atan(go), k4) 
   catch e
-    return 0
+    return 0.0
   end
 end
 
-function I4r(roots, root_diffs, rs)
+function I4r(roots::NTuple{4}, root_diffs::NTuple{5}, rs)
   r1, _, _, r4 = roots
   _, r31, r32, r41, r42 = root_diffs
 
