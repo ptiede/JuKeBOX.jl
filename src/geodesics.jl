@@ -559,8 +559,8 @@ function penrose_walker(r, θ, a, p_u::AbstractVector, f_u::AbstractVector)# Eq 
 
     A = pt*fr - pr*ft + a*sin(θ)^2(pr*fϕ - pϕ*fr)
     B = ((r^2 + a^2)*(pϕ*fθ-pθ*fϕ) - a*(pt*fθ - pθ*ft))*sin(θ)
-    #return (A - B*im)*(r - a*cos(θ)*im)
-    return A*r - B*a*cos(θ), -(A*a*cos(θ) - B*r)
+    return (A - B*im)*(r - a*cos(θ)*im)
+    #return A*r - B*a*cos(θ), -(A*a*cos(θ) - B*r)
 
 end
 
@@ -580,7 +580,7 @@ end
 evpa(fα,fβ) = atan(-fα, fβ)
 
 
-function calcPol(α, β, ri, θs, θo, a, B::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
+function calcPol(α, β, ri, θs, θo, a, spec_index, B::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
     βv = βfluid[1]
     θz = βfluid[2]
     ϕz = βfluid[3]
@@ -593,18 +593,18 @@ function calcPol(α, β, ri, θs, θo, a, B::AbstractArray{Float64}, βfluid::Ab
     p_bl_u = kerr_met_uu(ri, θs, a) * p_bl_d
     p_zamo_u = jac_bl2zamo_ud(ri, θs, a) * p_bl_u
     p_fluid_u = jac_zamo2fluid_ud(βv, θz, ϕz) *  p_zamo_u
-    vec = cross(normalize(@view p_fluid_u[begin+1:end]), B)
-    norm = √dot(vec, vec)
+    vec = cross( (@view p_fluid_u[begin+1:end]) / p_fluid_u[1], B)
+    norm = √dot(vec, vec) + eps()
     f_fluid_u = zeros(4)
     f_fluid_u[2:end] .= vec / norm
     f_zamo_u = jac_zamo2fluid_ud(-βv, θz, ϕz) * f_fluid_u
     f_bl_u = jac_zamo2bl_ud(ri, θs, a) * f_zamo_u
-    κ1, κ2 = penrose_walker(ri, θs, a, p_bl_u, f_bl_u)
-    #f_screen = screen_polarisation(κ, θo, a, α, β)
+    κ = penrose_walker(ri, θs, a, p_bl_u, f_bl_u) 
+    eα, eβ = screen_polarisation(κ, θo, a, α, β) .* (norm^(spec_index+1.))
 
     #evpatemp = atan(f_screen...)
     #return  sin(evpatemp)/ p_fluid_u[1],  cos(evpatemp) / p_fluid_u[1]
-    return κ1, κ2, 1/p_fluid_u[1], abs(p_fluid_u[1]/p_fluid_u[4])
+    return eα, eβ, 1/p_fluid_u[1], abs(p_fluid_u[1]/p_fluid_u[4])
 end
 
 

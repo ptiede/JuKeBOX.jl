@@ -318,13 +318,13 @@ end
 function _emission(α, β, r, νr, νθ, g, o, bam, θs)
     fluid_vel = bam.β
     fluidβ = @SVector[fluid_vel.β, π/2. , fluid_vel.χ]
-    κ1, κ2, redshift, lp = calcPol(α, β, r,  θs, o.inclination, g.spin, magnetic_vector(bam.b), fluidβ , νr, νθ)
+    eα, eβ, redshift, lp = calcPol(α, β, r,  θs, o.inclination, g.spin, bam.α,  magnetic_vector(bam.b), fluidβ , νr, νθ)
 
     # screen appearance
-    ν = -(α + g.spin * sin(o.inclination))
-    enorm = (ν^2 + β^2)*sqrt(κ1^2+κ2^2) + eps()
-    eα = (β*κ2 - ν*κ1) / enorm
-    eβ = (β*κ1 + ν*κ2) / enorm
+    #ν = -(α + g.spin * sin(o.inclination))
+    #enorm = (ν^2 + β^2)*sqrt(κ1^2+κ2^2) + eps()
+    #eα = (β*κ2 - ν*κ1) / enorm
+    #eβ = (β*κ1 + ν*κ2) / enorm
     # Get the profile value at the emission radius
     prof = profile(bam, r)*redshift^(3+bam.α)
     # We add a small perturbation to q and u. This prevent taking a
