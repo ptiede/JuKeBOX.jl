@@ -9,12 +9,8 @@ export get_roots, Gθ, rs, calcPol, η, λ, r_potential, θ_potential, λcrit, �
 # Useful functions
 ##----------------------------------------------------------------------------------------------------------------------
 
-αboundary(a, θs) = a*sin(θs)
-
-function βboundary(α, θo, a, θs) 
-    √max((cos(θo)^2-cos(θs)^2)*(α^2-a^2+a^2*cos(θs)^2)/(cos(θs)^2 -1), 0.0)
-end
-
+@inline αboundary(a, θs) = a*sin(θs)
+@inline βboundary(α, θo, a, θs) = √max((cos(θo)^2-cos(θs)^2)*(α^2-a^2+a^2*cos(θs)^2)/(cos(θs)^2 -1), 0.0)
 
 
 """
@@ -172,8 +168,6 @@ Emission radius for emission that lies outside the photon ring and whose ray int
 function _rs(η, λ, a, τ)
   ans = 0.0
   num = 0.0
-  fo = 0.0
-  k = 0.0
   νr = true
 
   roots = get_roots(η, λ, a)
@@ -469,7 +463,7 @@ end
 ##----------------------------------------------------------------------------------------------------------------------
 MinkowskiMet() = @SMatrix [-1. 0. 0. 0.; 0. 1. 0. 0.; 0. 0. 1. 0.; 0. 0. 0. 1.]
 
-p_boyer_lindquist_d(r, θ, a, η, λ, νr::Bool, νθ::Bool) = @SVector [-1,(νr ? 1 : -1)*√(r_potential(η, λ, a, r))/Δ(r, a), λ, (νθ ? 1 : -1)*√θ_potential(η, λ, a, θ)]
+p_boyer_lindquist_d(r, θ, a, η, λ, νr::Bool, νθ::Bool) = @SVector [-1,(νr ? 1 : -1)*√abs(r_potential(η, λ, a, r))/Δ(r, a), λ, (νθ ? 1 : -1)*√abs(θ_potential(η, λ, a, θ))]
 
 """
     kerr_met_uu(r, θ, a)
@@ -580,7 +574,7 @@ end
 evpa(fα,fβ) = atan(-fα, fβ)
 
 
-function calcPol(α, β, ri, θs, θo, a, spec_index, B::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
+function calcPol(α, β, ri, θs, θo, a, spec_index, magfield::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
     βv = βfluid[1]
     θz = βfluid[2]
     ϕz = βfluid[3]
@@ -593,7 +587,7 @@ function calcPol(α, β, ri, θs, θo, a, spec_index, B::AbstractArray{Float64},
     p_bl_u = kerr_met_uu(ri, θs, a) * p_bl_d
     p_zamo_u = jac_bl2zamo_ud(ri, θs, a) * p_bl_u
     p_fluid_u = jac_zamo2fluid_ud(βv, θz, ϕz) *  p_zamo_u
-    vec = cross( (@view p_fluid_u[begin+1:end]) / p_fluid_u[1], B)
+    vec = cross( (@view p_fluid_u[begin+1:end]) / p_fluid_u[1], magfield)
     norm = √dot(vec, vec) + eps()
     f_fluid_u = zeros(4)
     f_fluid_u[2:end] .= vec 
