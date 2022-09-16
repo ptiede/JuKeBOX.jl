@@ -570,8 +570,8 @@ function screen_polarisation(κ::Complex, θ, a, α, β)# Eq 31 10.1103/PhysRevD
     κ2 = imag(κ)
 
     μ = -(α+a*sin(θ))
-    fα = (β*κ2 - μ*κ1)/√((κ1^2+κ2^2)*(μ^2+β^2))
-    fβ = (β*κ1 + μ*κ2)/√((κ1^2+κ2^2)*(μ^2+β^2))
+    fα = (β*κ2 - μ*κ1)/((μ^2+β^2))
+    fβ = (β*κ1 + μ*κ2)/((μ^2+β^2))
 
 
     return fα, fβ
@@ -596,11 +596,28 @@ function calcPol(α, β, ri, θs, θo, a, spec_index, B::AbstractArray{Float64},
     vec = cross( (@view p_fluid_u[begin+1:end]) / p_fluid_u[1], B)
     norm = √dot(vec, vec) + eps()
     f_fluid_u = zeros(4)
-    f_fluid_u[2:end] .= vec / norm
+    f_fluid_u[2:end] .= vec 
     f_zamo_u = jac_zamo2fluid_ud(-βv, θz, ϕz) * f_fluid_u
     f_bl_u = jac_zamo2bl_ud(ri, θs, a) * f_zamo_u
-    κ = penrose_walker(ri, θs, a, p_bl_u, f_bl_u) 
-    eα, eβ = screen_polarisation(κ, θo, a, α, β) .* (norm^(spec_index+1.))
+    #κ = penrose_walker(ri, θs, a, p_bl_u, f_bl_u) 
+    A = @SMatrix [
+      0.0 1.0 0.0 0.0;
+      -1.0 0.0 a*sin(θs)^2 0.;
+      0. -a*sin(θs)^2 0. 0.;
+      0. 0. 0. 0.
+    ]
+    B = @SMatrix [
+        0. 0. 0. -a*sin(θs);
+        0. 0. 0. 0;
+        0. 0. 0. (ri^2 + a^2);
+        a*sin(θs) 0. -(ri^2 + a^2) 0
+    ]
+    f_temp_d = ((A - B*im)*(ri - a*cos(θs)*im))* (f_bl_u)
+    κ = dot(p_bl_u, f_temp_d)
+    κ = κ / √(conj(κ)*κ)
+
+
+    eα, eβ = screen_polarisation(κ, θo, a, α, β) .* (norm^((spec_index+1.)/2))
 
     #evpatemp = atan(f_screen...)
     #return  sin(evpatemp)/ p_fluid_u[1],  cos(evpatemp) / p_fluid_u[1]
