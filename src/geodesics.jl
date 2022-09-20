@@ -45,10 +45,8 @@ Theta potential of a kerr blackhole
 """
 θ_potential(η, λ, a, θ) = η + a^2*cos(θ)^2 - λ^2*cot(θ)^2
 
-sort_roots(roots) = NTuple{4,ComplexF64}(sort(sort([roots...],by=x->abs(imag(x)),rev=true),by=y->real(y)))
-
 """
-  get_roots(η::Float64, λ::Float64, a::Float64)
+  get_roots(η, λ, a)
 
 Returns roots of r⁴ + (a²-η-λ²)r² + 2(η+(a-λ)²)r - a²η
 
@@ -67,22 +65,17 @@ function get_roots(η::Float64, λ::Float64, a::Float64)
     Q = -A/3*((A/6 +0im)^2 - C) - B^2/8
 
     Δ3 = -4*P^3 - 27*Q^2
-    ωp = (-Q/2 + (-Δ3/108)^(1/2) + 0im)^(1/3)
+    ωp = (-Q/2 + sqrt(-Δ3/108)+ 0im)^(1/3)
 
     C = ((-1+0im)^(2/3), (-1+0im)^(4/3), 1) .* ωp
     v = -P ./ ((3+0im) .* C)
     
-    ξ = sort([i for i in C .+ v], lt=(x,y)->real(x)<real(y))
-    ξ1 = ξ[1]
-    ξ2 = ξ[2]
-    ξ0 = ξ[3]
+    ξ0 = argmax(real, (C .+ v))  - A/3.
 
-    ξ0 = sort([ξ0,ξ1,ξ2], lt=(x,y)->real(x)<real(y))[end]-A/3
-
-    r1 = (-(2ξ0)^(1/2) - (-(2A + 2ξ0 - (√2B)/(√ξ0)))^(1/2))/2
-    r2 = (-(2ξ0)^(1/2) + (-(2A + 2ξ0 - (√2B)/(√ξ0)))^(1/2))/2
-    r3 = ((2ξ0)^(1/2) - (-(2A + 2ξ0 + (√2B)/(√ξ0)))^(1/2))/2
-    r4 = ((2ξ0)^(1/2) + (-(2A + 2ξ0 + (√2B)/(√ξ0)))^(1/2))/2
+    r1 = (-sqrt(2ξ0) - sqrt(-(2A + 2ξ0 - (√2B)/(√ξ0))))/2
+    r2 = (-sqrt(2ξ0) + sqrt(-(2A + 2ξ0 - (√2B)/(√ξ0))))/2
+    r3 = (sqrt(2ξ0) - sqrt(-(2A + 2ξ0 + (√2B)/(√ξ0))))/2
+    r4 = (sqrt(2ξ0) + sqrt(-(2A + 2ξ0 + (√2B)/(√ξ0))))/2
 
     return r1, r2, r3, r4
 end
@@ -126,30 +119,33 @@ Returns η values on the critical curve associated with a given r.
 # Radial Stuff
 ##----------------------------------------------------------------------------------------------------------------------
 
-function get_root_diffs(r1, r2, r3, r4)
-  r21 = r2 - r1
-  r31 = r3 - r1
-  r32 = r3 - r2
-  r41 = r4 - r1
-  r42 = r4 - r2
+get_root_diffs(r1, r2, r3, r4) = r2 - r1, r3 - r1, r3 - r2, r4 - r1, r4 - r2
 
-  return r21, r31, r32, r41, r42
+struct RayCache
+  η::Float64
+  λ::Float64
 end
+
+#RayCache(η, λ) = RayCache(η, λ, 0., (0.,0.,0.,0.), (0.,0.,0.,0.,0.))
 
 function rs(α, β, θs, θo, a, isindir, n) 
 
     if cos(θs) > abs(cos(θo))
         αmin = αboundary(a, θs)
-        βbound = (abs(α) >= αmin ? βboundary(α, θo, a, θs) : 0.)
-        if abs(β) < βbound
+        βbound = (abs(α) >= αmin + eps() ? βboundary(α, θo, a, θs) : 0.)
+        if abs(β) + eps() < βbound
             return 0., true, 4
         end
     end
-    #βtemp = ((θo > π/2) ⊻ (n%2 == 1)) ? -β : β
     ηtemp = η(α, β, θo, a)
     λtemp = λ(α, θo)
-    τ = Gθ(α, β, a, θs, θo, isindir, n)[1]
-    if τ != Inf; return _rs(ηtemp, λtemp, a, τ)  else (0., true, 4) end
+    τ, _ = Gθ(α, β, a, θs, θo, isindir, n)
+    #τ = Gθ(θs, θo, a, isindir, n, cache)[1]
+    if τ != Inf
+      return _rs(ηtemp, λtemp, a, τ)
+    else 
+      (0., true, 4) 
+    end
 end
 
 """
@@ -167,15 +163,11 @@ Emission radius for emission that lies outside the photon ring and whose ray int
 """
 function _rs(η, λ, a, τ)
   ans = 0.0
-  num = 0.0
   νr = true
 
   roots = get_roots(η, λ, a)
   rh = 1 + √(1-a^2)
-  numreals::Int = (abs(imag(roots[1])) > 1e-10 ? 0 : 2) + (abs(imag(roots[3])) > 1e-10 ? 0 : 2)
-  num::ComplexF64 = 0.0
-  den::ComplexF64 = 0.0
-
+  numreals = (abs(imag(roots[1])) > 1e-10 ? 0 : 2) + (abs(imag(roots[3])) > 1e-10 ? 0 : 2)
 
   if numreals == 4 #case 1 & 2
     ans, νr = _rs_case1(real.(roots), rh, τ)
@@ -183,6 +175,7 @@ function _rs(η, λ, a, τ)
     if abs(imag(roots[4])) < 1e-10
      roots= (roots[1], roots[4],roots[2],roots[3])
     end
+
     ans, νr = _rs_case3(roots, τ)
   else #case 4
     ans, νr = _rs_case4(roots, rh, τ)
@@ -197,21 +190,20 @@ function _rs_case1(roots, rh, τ)
   root_diffs = get_root_diffs(roots...)
   _, r31, r32, r41, r42 = root_diffs
 
-  if r4 >= rh && τ > 2I2r_turn(root_diffs) # invalid case1
+  k = (r32*r41) / (r31*r42)
+  fo = Elliptic.F(asin(√(r31/r41)), k)
+  X2 = fo - √(r31*r42) * τ / 2
+  if r4 >= rh && X2 < -fo # invalid case1
     ans = 0.
   elseif r4 < rh && τ > I2r(roots, root_diffs, rh, true) # invalid case2
     ans = 0.
   else
-    k = (r32*r41) / (r31*r42)
-
-    fo = Elliptic.F(asin(√(r31/r41)), k)
-    X2 = fo - √(r31*r42) * τ / 2
     sn = r41 * Elliptic.Jacobi.sn(X2, k)^2
 
     ans = (r31*r4 - r3*sn) / (r31 - sn)
     νr = X2 > 0
   end
-  return ans::Float64, νr::Bool
+  return ans, νr
 end
 function _rs_case3(roots, τ)
   ans = 0.0
@@ -269,7 +261,6 @@ function _rs_case4(roots, rh, τ)
   return ans, νr
 end
 
-
 function I2r_turn(root_diffs::NTuple{5})
   _, r31, r32, r41, r42 = root_diffs
   k = r32*r41/(r31*r42)
@@ -282,67 +273,67 @@ function I2r(roots::NTuple{4}, root_diffs::NTuple{5}, rs, isindir)
 
   k = r32*r41/(r31*r42)
   x2_s = √((rs-r4)/(rs-r3)*r31/r41)
-  if !(-1.0 < x2_s < 1.0); return 0.0; end
-  Ir_s = 2.0/√real(r31*r42)*Elliptic.F(asin(x2_s), k)
+  if !(-1 < x2_s < 1); return 0.; end
+  Ir_s = 2/√real(r31*r42)*Elliptic.F(asin(x2_s), k)
   Ir_turn = I2r_turn(root_diffs)
 
   return Ir_turn + (isindir ? Ir_s : -Ir_s)
 end
 
-function I3r_full(root_diffs::NTuple{5})
+function I3r_full(root_diffs)
   r21, r31, r32, r41, r42 = map(abs, root_diffs)
   A2 = r32*r42
   B2 = r31*r41
   if A2 < 0.0 || B2 < 0.0; return Inf; end
 
   A, B = √A2, √B2
-  k3 = ((A+B)^2.0 - r21^2.0)/(4A*B)
+  k3 = ((A+B)^2 - r21^2)/(4A*B)
 
   temprat = B/A
-  x3_turn = real(√((1.0+0.0im - temprat)/(1.0 + temprat)))
-  return 2.0/√real(A*B)*Elliptic.F(acos(x3_turn), k3)
+  x3_turn = real(√((1+0im - temprat)/(1 + temprat)))
+  return 2/√real(A*B)*Elliptic.F(acos(x3_turn), k3)
 end
 
-function I3r(roots::NTuple{4}, root_diffs::NTuple{5}, rs)
+function I3r(roots, root_diffs, rs)
   r1, r2, _, _ = roots
   r21, r31, r32, r41, r42 = root_diffs
 
   A2 = real(r32*r42)
   B2 = real(r31*r41)
-  if A2 < 0.0 || B2 < 0.0; return 0.0; end
+  if A2 < 0. || B2 < 0; return 0; end
 
   A, B = √A2, √B2
 
 
-  k3 = real(((A+B)^2.0 - r21^2.0)/(4.0A*B))
+  k3 = real(((A+B)^2 - r21^2)/(4A*B))
   temprat = B*(rs-r2)/(A*(rs-r1))
-  x3_s = real(√((1.0+0.0im - temprat)/(1.0 + temprat)))
-  Ir_s = 2.0/√real(A*B)*Elliptic.F(real(acos(x3_s)), k3)
+  x3_s = real(√((1+0im - temprat)/(1 + temprat)))
+  Ir_s = 2/√real(A*B)*Elliptic.F(real(acos(x3_s)), k3)
   Ir_full = I3r_full(root_diffs)
 
   return abs(Ir_full - Ir_s)
 end
 
-function I4r_full(roots::NTuple{4}, root_diffs::NTuple{5})
+function I4r_full(roots, root_diffs)
   r1, _, _, r4 = roots
   _, r31, r32, r41, r42 = root_diffs
 
   try
     C = √real(r31*r42)
     D = √real(r32*r41)
-    k4 = 4C*D/(C+D)^2.0
+    k4 = 4C*D/(C+D)^2
     a2 = abs(imag(r1))
 
-    k4 = 4*C*D/(C+D)^2.0
+    k4 = 4*C*D/(C+D)^2
     
-    go = √max((4a2^2.0 - (C-D)^2.0) / ((C+D)^2.0 - 4a2^2.0), 0.0)
-    return 2.0/(C+D)*Elliptic.F(π/2.0 + atan(go), k4) 
+    go = √max((4a2^2 - (C-D)^2) / ((C+D)^2 - 4a2^2), 0.)
+    return 2/(C+D)*Elliptic.F(π/2 + atan(go), k4) 
   catch e
-    return 0.0
+    return 0
   end
 end
 
-function I4r(roots::NTuple{4}, root_diffs::NTuple{5}, rs)
+function I4r(roots, root_diffs, rs)
   r1, _, _, r4 = roots
   _, r31, r32, r41, r42 = root_diffs
 
@@ -389,74 +380,49 @@ Mino time of trajectory between two inclinations for a given screen coordinate
 
   `n` : nth image in orde of amount of minotime traversed
 """
-function Gθ(α, β, a, θs, θo, isindir::Bool, n::Int64)
-  Go, Gs, Ghat, minotime, isvortical = 0, 0, 0, 0, false
-  ηtemp = η(α, β, θo, a)
-  λtemp = λ(α, θo)
+Gθ(α, β, a, θs, θo, isindir, n) = _Gθ(β, θs, θo, a, isindir, n, RayCache(η(α, β, θo, a), λ(α, θo)))
+
+function _Gθ(β, θs, θo, a, isindir, n, cache::RayCache)
+  Yo, Ys, = 0., 0.
+  ηtemp = cache.η
+  λtemp = cache.λ
 
   Δθ = 1/2*(1 - (ηtemp + λtemp^2)/a^2)
   up = Δθ + √(Δθ^2 + ηtemp/a^2)
   um = Δθ - √(Δθ^2 + ηtemp/a^2)
   m = up/um
+  k = m
 
-  #if um == 0; return Inf, isvortical ;end
-
-
-  if ηtemp > 0. #Ordinary motion
-    k = m
-    # Skip sign flip because another sign flip occurs when stitching together the mino time
-    args =  cos(θs)/√(up)
-    argo =  cos(θo)/√(up)
-
-    if !(-1 < args < 1) || !(-1 < argo < 1);return Inf, isvortical;end
-
-    Gs = 1/√(-um*a^2 +0im)*Elliptic.F(asin(args), k)
-    Go = 1/√(-um*a^2 +0im)*Elliptic.F(asin(argo), k)
-    Ghat = 2/√(-um*a^2 +0im)*(Elliptic.K(k))
-  
-  else #Vortical motion
-    isvortical = true 
-
-    argo = ((cos(θo)^2 - um)/(up-um))
-    args = ((cos(θs)^2 - um)/(up-um))
-
-    if !(0. < argo < 1.) ||  !(0. < args <  1.);return Inf, isvortical;end
-
-    Υo = asin(√argo)
-    Υs = asin(√args)    
-    k = 1. - m
-    Go = 1/√(um*a^2)*Elliptic.F(Υo, k)
-    Gs = 1/√(um*a^2)*Elliptic.F(Υs, k)
-    Ghat = 2/√(um*a^2)*Elliptic.K(k)
-
+  isvortical = ηtemp < 0.
+  args, argo, k = isvortical ? ((cos(θs)^2 - um)/(up-um), (cos(θo)^2 - um)/(up-um), 1. - m) : (cos(θs)/√(up), cos(θo)/√(up), m)
+  if isvortical 
+    if (!(0. < argo < 1.) ||  !(0. < args <  1.)); return Inf, isvortical; end
+    Yo = asin(√argo)
+    Ys = asin(√args)
+  else
+    if !(-1 < args < 1) || !(-1 < argo < 1); return Inf, isvortical; end
+    Yo = asin(argo)
+    Ys = asin(args)
   end
 
-  if cos(θs) < abs(cos(θo))
-        if isindir != ((β > 0) ⊻ (θo > π/2))
-          return Inf, isvortical
-        end
-  end
+  tempfac = 1/√abs(um*a^2)
+  Go = tempfac*Elliptic.F(Yo, k)
+  Gs = tempfac*Elliptic.F(Ys, k)
+  Ghat = 2tempfac*Elliptic.K(k)
+
+  is_in_cone = cos(θs) < abs(cos(θo))
+
+  # Check if the observer is in the cone and if the indirect emission is on the correct side of the screen
+  (is_in_cone && (isindir != ((β > 0) ⊻ (θo > π/2)))) && return Inf, isvortical
+
+  ((!is_in_cone && !isvortical && ((β < 0) ⊻ (n%2==1))) || (isvortical && θo >= π/2)) && return Inf, isvortical
 
   νθ =  cos(θs) < abs(cos(θo)) ? (θo > θs) ⊻ (n%2==1) : !isindir
   minotime = real(isindir ? (n+1)*Ghat -sign(β)*Go + (νθ ? 1 : -1)*Gs : n*Ghat - sign(β)*Go + (νθ ? 1 : -1)*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
 
-  #if cos(θs) < abs(cos(θo))
-  #  #if θo < π/2
-  #    #minotime = real(isindir ? (n+1)*Ghat - Go - Gs : n*Ghat + Go - Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
-  #  #else
-  #  #νθ =  θo < π/2 ? -1 : 1
-  #  minotime = real(isindir ? (n+1)*Ghat -sign(β)*Go + (n%2==1 ? -1 : 1)*νθ*Gs : n*Ghat - sign(β)*Go + (n%2==1 ? -1 : 1)*νθ*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
-  #  #end
-  #else
-  #  #minotime = real((isindir ? (-cos(θo) > cos(θs) ? (n+1)*Ghat+(Gs + Go) : (n+1)*Ghat-(Gs + Go)) : (β < 0 ? n*Ghat + Gs + Go : n*Ghat + Gs - Go) ))
-  #  minotime = real((isindir ? (n+1)*Ghat-(Gs + sign(β)*Go) : n*Ghat + Gs - sign(β)*Go))
-  #end
-
-  if (((β < 0) ⊻ (n%2==1)) && cos(θs) > abs(cos(θo)) && !isvortical) || (isvortical && θo >= π/2)
-    return Inf, isvortical
-  end
   return minotime, isvortical
 end 
+
 
 ##----------------------------------------------------------------------------------------------------------------------
 #Polarization stuff
@@ -476,12 +442,20 @@ Inverse Kerr Metric in Boyer Lindquist (BL) coordinates.
     
     `a` : Blackhole spin
 """
-kerr_met_uu(r, θ, a) = @SMatrix [ #Eq 1 2105.09440
-        -Ξ(r,θ,a)/(Σ(r,θ,a)*Δ(r,a))             0.              -Ξ(r,θ,a)*ω(r,θ,a)/(Σ(r,θ,a)*Δ(r,a))                                0.;
-        0.                                      Δ(r,a)/Σ(r,θ,a) 0.                                                                  0.;
-        -Ξ(r,θ,a)*ω(r,θ,a)/(Σ(r,θ,a)*Δ(r,a))    0.              Σ(r,θ,a)*csc(θ)^2/Ξ(r,θ,a)-Ξ(r,θ,a)*ω(r,θ,a)^2/(Σ(r,θ,a)*Δ(r,a))    0.;
-        0.                                      0.              0.                                                                  1/Σ(r,θ,a)
-    ]
+function kerr_met_uu(r, θ, a) 
+  Ξt = Ξ(r,θ,a)
+  Σt = Σ(r,θ,a)
+  Δt = Δ(r,a)
+  ωt = ω(r,θ,a)
+
+  return @SMatrix [ #Eq 1 2105.09440
+    -Ξt/(Σt*Δt)       0.      -Ξt*ωt/(Σt*Δt)                    0.;
+    0.                Δt/Σt   0.                                0.;
+    -Ξt*ωt/(Σt*Δt)    0.      Σt*csc(θ)^2/Ξt-Ξt*ωt^2/(Σt*Δt)    0.;
+    0.                0.      0.                                1/Σt
+  ]
+end
+
 """
     jac_bl2zamo_du(r, θ, a)
 
@@ -493,13 +467,19 @@ Jacobian which converts Boyer-Lindquist (BL) covector on the right to a ZAMO cov
     
     `a` : Blackhole spin
 """
-jac_bl2zamo_du(r, θ, a) = @SMatrix [# Eq 3.1 1972ApJ...178..347B
-    # coords = {t, r, ϕ, θ}
-        √(A(r,θ,a)/(Σ(r,θ,a)*Δ(r,a)))   0.                  2*a*r/√(A(r,θ,a)*Σ(r,θ,a)*Δ(r,a))   0.;
-        0.                              √(Δ(r,a)/Σ(r,θ,a))  0.                                  0.;
-        0.                              0.                  √(Σ(r,θ,a)/A(r,θ,a))*csc(θ)         0.;
-        0.                              0.                  0.                                  -1/√Σ(r,θ,a)
-    ]
+function jac_bl2zamo_du(r, θ, a)
+  # coords = {t, r, ϕ, θ}
+  Σt = Σ(r,θ,a)
+  Δt = Δ(r,a)
+  At = A(r,θ,a)
+  return @SMatrix [# Eq 3.1 1972ApJ...178..347B
+    √(At/(Σt*Δt))   0.          2*a*r/√(At*Σt*Δt)   0.;
+    0.              √(Δt/Σt)    0.                  0.;
+    0.              0.          √(Σt/At)*csc(θ)     0.;
+    0.              0.          0.                  -1/√Σt
+  ]
+end
+
 """
     jac_zamo2zbl_du(r, θ, a)
 
@@ -511,51 +491,74 @@ Jacobian which converts ZAMO covector on the right to a Boyer-Lindquist (BL) cov
     
     `a` : Blackhole spin
 """
-jac_zamo2bl_du(r, θ, a) = @SMatrix [
+function jac_zamo2bl_du(r, θ, a)    
+  Σt = Σ(r,θ,a)
+  Δt = Δ(r,a)
+  At = A(r,θ,a)
+
+  return @SMatrix [
     # coords = {t, r, ϕ, θ}
-        √((Σ(r,θ,a)*Δ(r,a))/A(r,θ,a))   0.                      -2*a*r*sin(θ)/√(A(r,θ,a)*Σ(r,θ,a))  0.;
-        0.                              √(Σ(r, θ, a)/Δ(r, a))   0.                                  0.;
-        0.                              0.                      √(A(r,θ,a)/Σ(r,θ,a))*sin(θ)         0.;
-        0.                              0.                      0.                                  -√Σ(r,θ,a)
+      √((Σt*Δt)/At)   0.                      -2*a*r*sin(θ)/√(At*Σt)  0.;
+      0.                  √(Σ(r, θ, a)/Δ(r, a))   0.                      0.;
+      0.                  0.                      √(At/Σt)*sin(θ)         0.;
+      0.                  0.                      0.                      -√Σt
     ]
+end
 
 
-jac_bl2zamo_ud(r, θ, a) = @SMatrix [#  Eq 3.2 1972ApJ...178..347B
+function jac_bl2zamo_ud(r, θ, a)
+  Σt = Σ(r,θ,a)
+  Δt = Δ(r,a)
+  At = A(r,θ,a)
+
+  return @SMatrix [#  Eq 3.2 1972ApJ...178..347B
     # coords = {t, r, ϕ, θ}
-    √((Σ(r,θ,a)*Δ(r,a))/A(r,θ,a))       0.                      0.                          0.;
-    0.                                  √(Σ(r, θ, a)/Δ(r, a))   0.                          0.;
-    -(2a*r*sin(θ))/√(A(r,θ,a)*Σ(r,θ,a)) 0.                      √(A(r,θ,a)/Σ(r,θ,a))*sin(θ) 0.;
-    0.                                  0.                      0.                          -√Σ(r,θ,a)
-    ]
+    √((Σt*Δt)/At)           0.                      0.               0.;
+    0.                      √(Σt/Δt)   0.               0.;
+    -(2a*r*sin(θ))/√(At*Σt) 0.                      √(At/Σt)*sin(θ)  0.;
+    0.                      0.                      0.               -√Σt
+  ]
+end
 
-jac_zamo2bl_ud(r, θ, a) = @SMatrix [
+function jac_zamo2bl_ud(r, θ, a) 
+  Σt = Σ(r,θ,a)
+  Δt = Δ(r,a)
+  At = A(r,θ,a)
+
+
+  return @SMatrix [
     # coords = {t, r, ϕ, θ}
-    √(A(r,θ,a)/(Σ(r,θ,a)*Δ(r,a)))       0.                  0.                          0.;
-    0.                                  √(Δ(r,a)/Σ(r,θ,a))  0.                          0.;
-    2a*r/√(Σ(r,θ,a)*Δ(r,a)*A(r,θ,a))    0.                  √(Σ(r,θ,a)/A(r,θ,a))*csc(θ) 0.;
-    0.                                  0.                  0.                          -1/√Σ(r,θ,a)
+    √(At/(Σt*Δt))       0.                  0.                          0.;
+    0.                                  √(Δt/Σt)  0.                          0.;
+    2a*r/√(Σt*Δt*At)    0.                  √(Σt/At)*csc(θ) 0.;
+    0.                                  0.                  0.                          -1/√Σt
 ]
+end
 
 function jac_zamo2fluid_ud(β, θ, φ)
     γ = 1 / √(1 - β^2)
+    sinφ = sin(φ)
+    cosφ = cos(φ) 
+    sinθ = sin(θ)
+    cosθ = cos(θ) 
 
     return @SMatrix  [
-        γ                   -β*γ*cos(φ)*sin(θ)                              -β*γ*sin(φ)*sin(θ)                          -β*γ*cos(θ);
-        -β*γ*cos(φ)*sin(θ)  cos(θ)^2*cos(φ)^2+γ*cos(φ)^2*sin(θ)^2+sin(φ)^2  (γ-1)*cos(φ)*sin(θ)^2*sin(φ)                (γ-1)*cos(θ)*cos(φ)*sin(θ);
-        -β*γ*sin(θ)*sin(φ)  (γ-1)*cos(φ)*sin(θ)^2*sin(φ)                    cos(φ)^2+(cos(θ)^2+γ*sin(θ)^2)*sin(φ)^2     (γ-1)*cos(θ)*sin(θ)*sin(φ);
-        -β*γ*cos(θ)         (γ-1)*cos(θ)*cos(φ)*sin(θ)                      (γ-1)*cos(θ)*sin(θ)*sin(φ)                  γ*cos(θ)^2+sin(θ)^2         
+        γ               -β*γ*cosφ*sinθ                         -β*γ*sinφ*sinθ                        -β*γ*cosθ;
+        -β*γ*cosφ*sinθ  cosθ^2*cosφ^2+γ*cosφ^2*sinθ^2+sinφ^2   (γ-1)*cosφ*sinθ^2*sinφ                (γ-1)*cosθ*cosφ*sinθ;
+        -β*γ*sinθ*sinφ  (γ-1)*cosφ*sinθ^2*sinφ                 cosφ^2+(cosθ^2+γ*sinθ^2)*sinφ^2     (γ-1)*cosθ*sinθ*sinφ;
+        -β*γ*cosθ       (γ-1)*cosθ*cosφ*sinθ                   (γ-1)*cosθ*sinθ*sinφ                  γ*cosθ^2+sinθ^2         
     ]
 end
 
 function penrose_walker(r, θ, a, p_u::AbstractVector, f_u::AbstractVector)# Eq 6 arXiv:2001.08750v1
     pt, pr, pϕ, pθ = p_u
     ft, fr, fϕ, fθ = f_u
+    sinθ = sin(θ)
+    cosθ = cos(θ)
 
-    A = pt*fr - pr*ft + a*sin(θ)^2(pr*fϕ - pϕ*fr)
-    B = ((r^2 + a^2)*(pϕ*fθ-pθ*fϕ) - a*(pt*fθ - pθ*ft))*sin(θ)
-    return (A - B*im)*(r - a*cos(θ)*im)
-    #return A*r - B*a*cos(θ), -(A*a*cos(θ) - B*r)
-
+    A = pt*fr - pr*ft + a*sinθ^2(pr*fϕ - pϕ*fr)
+    B = ((r^2 + a^2)*(pϕ*fθ-pθ*fϕ) - a*(pt*fθ - pθ*ft))*sinθ
+    return A*r - B*a*cosθ, -(A*a*cosθ - B*r)
 end
 
 function screen_polarisation(κ::Complex, θ, a, α, β)# Eq 31 10.1103/PhysRevD.104.044060
@@ -564,14 +567,15 @@ function screen_polarisation(κ::Complex, θ, a, α, β)# Eq 31 10.1103/PhysRevD
     κ2 = imag(κ)
 
     μ = -(α+a*sin(θ))
-    fα = (β*κ2 - μ*κ1)/((μ^2+β^2))
-    fβ = (β*κ1 + μ*κ2)/((μ^2+β^2))
+    fα = (β*κ2 - μ*κ1)/(μ^2+β^2)
+    fβ = (β*κ1 + μ*κ2)/(μ^2+β^2)
 
 
     return fα, fβ
 end
 
 evpa(fα,fβ) = atan(-fα, fβ)
+
 
 
 function calcPol(α, β, ri, θs, θo, a, spec_index, magfield::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
@@ -583,7 +587,6 @@ function calcPol(α, β, ri, θs, θo, a, spec_index, magfield::AbstractArray{Fl
     λtemp = λ(α, θo)
     p_bl_d = p_boyer_lindquist_d(ri, θs, a, ηtemp, λtemp, νr, θsign)
 
-    
     p_bl_u = kerr_met_uu(ri, θs, a) * p_bl_d
     p_zamo_u = jac_bl2zamo_ud(ri, θs, a) * p_bl_u
     p_fluid_u = jac_zamo2fluid_ud(βv, θz, ϕz) *  p_zamo_u
@@ -593,7 +596,6 @@ function calcPol(α, β, ri, θs, θo, a, spec_index, magfield::AbstractArray{Fl
     f_fluid_u[2:end] .= vec 
     f_zamo_u = jac_zamo2fluid_ud(-βv, θz, ϕz) * f_fluid_u
     f_bl_u = jac_zamo2bl_ud(ri, θs, a) * f_zamo_u
-    #κ = penrose_walker(ri, θs, a, p_bl_u, f_bl_u) 
     A = @SMatrix [
       0.0 1.0 0.0 0.0;
       -1.0 0.0 a*sin(θs)^2 0.;
@@ -613,8 +615,6 @@ function calcPol(α, β, ri, θs, θo, a, spec_index, magfield::AbstractArray{Fl
 
     eα, eβ = screen_polarisation(κ, θo, a, α, β) .* (norm^((spec_index+1.)/2))
 
-    #evpatemp = atan(f_screen...)
-    #return  sin(evpatemp)/ p_fluid_u[1],  cos(evpatemp) / p_fluid_u[1]
     return eα, eβ, 1/p_fluid_u[1], abs(p_fluid_u[1]/p_fluid_u[4])
 end
 
