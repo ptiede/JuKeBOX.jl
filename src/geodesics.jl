@@ -56,7 +56,7 @@ Returns roots of r⁴ + (a²-η-λ²)r² + 2(η+(a-λ)²)r - a²η
 
   `a` : Blackhole spin
 """
-function get_roots(η::Float64, λ::Float64, a::Float64)
+function get_roots(η, λ, a)
     A = a^2 - η - λ^2
     B = 2(η + (λ-a)^2)
     C = -a^2*η   
@@ -121,26 +121,19 @@ Returns η values on the critical curve associated with a given r.
 
 get_root_diffs(r1, r2, r3, r4) = r2 - r1, r3 - r1, r3 - r2, r4 - r1, r4 - r2
 
-struct RayCache
-  η::Float64
-  λ::Float64
-end
-
-#RayCache(η, λ) = RayCache(η, λ, 0., (0.,0.,0.,0.), (0.,0.,0.,0.,0.))
 
 function rs(α, β, θs, θo, a, isindir, n) 
 
     if cos(θs) > abs(cos(θo))
         αmin = αboundary(a, θs)
-        βbound = (abs(α) >= αmin + eps() ? βboundary(α, θo, a, θs) : 0.)
+        βbound = (abs(α) >= αmin - eps() ? βboundary(α, θo, a, θs) : 0.)
         if abs(β) + eps() < βbound
             return 0., true, 4
         end
     end
     ηtemp = η(α, β, θo, a)
     λtemp = λ(α, θo)
-    τ, _ = Gθ(α, β, a, θs, θo, isindir, n)
-    #τ = Gθ(θs, θo, a, isindir, n, cache)[1]
+    τ, _ = _Gθ(sign(β), θs, θo, a, isindir, n, ηtemp, λtemp)
     if τ != Inf
       return _rs(ηtemp, λtemp, a, τ)
     else 
@@ -380,20 +373,18 @@ Mino time of trajectory between two inclinations for a given screen coordinate
 
   `n` : nth image in orde of amount of minotime traversed
 """
-Gθ(α, β, a, θs, θo, isindir, n) = _Gθ(β, θs, θo, a, isindir, n, RayCache(η(α, β, θo, a), λ(α, θo)))
+Gθ(α, β, a, θs, θo, isindir, n) = _Gθ(sign(β), θs, θo, a, isindir, n, η(α, β, θo, a), λ(α, θo))
 
-function _Gθ(β, θs, θo, a, isindir, n, cache::RayCache)
+function _Gθ(signβ, θs, θo, a, isindir, n, η, λ)
   Yo, Ys, = 0., 0.
-  ηtemp = cache.η
-  λtemp = cache.λ
 
-  Δθ = 1/2*(1 - (ηtemp + λtemp^2)/a^2)
-  up = Δθ + √(Δθ^2 + ηtemp/a^2)
-  um = Δθ - √(Δθ^2 + ηtemp/a^2)
+  Δθ = 1/2*(1 - (η+ λ^2)/a^2)
+  up = Δθ + √(Δθ^2 + η/a^2)
+  um = Δθ - √(Δθ^2 + η/a^2)
   m = up/um
   k = m
 
-  isvortical = ηtemp < 0.
+  isvortical = η< 0.
   args, argo, k = isvortical ? ((cos(θs)^2 - um)/(up-um), (cos(θo)^2 - um)/(up-um), 1. - m) : (cos(θs)/√(up), cos(θo)/√(up), m)
   if isvortical 
     if (!(0. < argo < 1.) ||  !(0. < args <  1.)); return Inf, isvortical; end
@@ -413,12 +404,12 @@ function _Gθ(β, θs, θo, a, isindir, n, cache::RayCache)
   is_in_cone = cos(θs) < abs(cos(θo))
 
   # Check if the observer is in the cone and if the indirect emission is on the correct side of the screen
-  (is_in_cone && (isindir != ((β > 0) ⊻ (θo > π/2)))) && return Inf, isvortical
+  (is_in_cone && (isindir != ((signβ > 0) ⊻ (θo > π/2)))) && return Inf, isvortical
 
-  ((!is_in_cone && !isvortical && ((β < 0) ⊻ (n%2==1))) || (isvortical && θo >= π/2)) && return Inf, isvortical
+  ((!is_in_cone && !isvortical && ((signβ < 0) ⊻ (n%2==1))) || (isvortical && θo >= π/2)) && return Inf, isvortical
 
   νθ =  cos(θs) < abs(cos(θo)) ? (θo > θs) ⊻ (n%2==1) : !isindir
-  minotime = real(isindir ? (n+1)*Ghat -sign(β)*Go + (νθ ? 1 : -1)*Gs : n*Ghat - sign(β)*Go + (νθ ? 1 : -1)*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
+  minotime = real(isindir ? (n+1)*Ghat -signβ*Go + (νθ ? 1 : -1)*Gs : n*Ghat - signβ*Go + (νθ ? 1 : -1)*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
 
   return minotime, isvortical
 end 
@@ -529,9 +520,9 @@ function jac_zamo2bl_ud(r, θ, a)
   return @SMatrix [
     # coords = {t, r, ϕ, θ}
     √(At/(Σt*Δt))       0.                  0.                          0.;
-    0.                                  √(Δt/Σt)  0.                          0.;
-    2a*r/√(Σt*Δt*At)    0.                  √(Σt/At)*csc(θ) 0.;
-    0.                                  0.                  0.                          -1/√Σt
+    0.                  √(Δt/Σt)            0.                          0.;
+    2a*r/√(Σt*Δt*At)    0.                  √(Σt/At)*csc(θ)             0.;
+    0.                  0.                  0.                          -1/√Σt
 ]
 end
 
