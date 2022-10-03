@@ -51,6 +51,16 @@ function bam(nmax, spin, α, rpeak, width, βv, χ, ι, η=χ+π)
     return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, profile, v, b)
 end
 
+function bamDblPower(nmax, spin, α, rpeak, p1, p2, βv, χ, ι, η=χ+π)
+    g = Kerr(spin)
+    v = FluidVelocity(βv, χ)
+    b = MagneticField(ι, η)
+    profile = DblPower(rpeak, p1, p2)
+    return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, profile, v, b)
+end
+
+bamGauss(nmax, spin, α, rpeak, width, βv, χ, ι, η=χ+π) = bam(nmax, spin, α, rpeak, width, βv, χ, ι, η)
+
 
 struct FluidVelocity{T}
     β::T
