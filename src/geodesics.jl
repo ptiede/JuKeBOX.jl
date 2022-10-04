@@ -581,10 +581,10 @@ function calcPol(α, β, ri, θs, θo, a, spec_index, magfield::AbstractArray{Fl
     p_bl_u = kerr_met_uu(ri, θs, a) * p_bl_d
     p_zamo_u = jac_bl2zamo_ud(ri, θs, a) * p_bl_u
     p_fluid_u = jac_zamo2fluid_ud(βv, θz, ϕz) *  p_zamo_u
-    vec = cross( (@view p_fluid_u[begin+1:end]) / p_fluid_u[1], magfield)
+    vec = cross( (p_fluid_u[begin+1:end]) / p_fluid_u[1], magfield)
     norm = √dot(vec, vec) + eps()
-    f_fluid_u = zeros(4)
-    f_fluid_u[2:end] .= vec 
+    f_fluid_u = SVector(zero(eltype(vec)), vec[1], vec[2], vec[3])
+    #f_fluid_u[2:end] .= vec 
     f_zamo_u = jac_zamo2fluid_ud(-βv, θz, ϕz) * f_fluid_u
     f_bl_u = jac_zamo2bl_ud(ri, θs, a) * f_zamo_u
     A = @SMatrix [
