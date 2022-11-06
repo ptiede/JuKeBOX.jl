@@ -11,7 +11,7 @@ using Polyester
 using StaticArrays
 using StructArrays
 
-export Observer, BAM, bam, raytrace, intensity_point
+export Observer, BAM, bam, bamDblPower, raytrace, intensity_point
 
 abstract type AccretionModel <: ComradeBase.AbstractPolarizedModel end
 ComradeBase.visanalytic(::Type{<:AccretionModel}) = ComradeBase.NotAnalytic()
