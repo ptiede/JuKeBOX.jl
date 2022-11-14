@@ -29,12 +29,12 @@ struct Observer{D,O}
     inclination::O
 end
 
-
-
 struct BAM{S, FD, V, B}
     nmax::Int
     """spectral index"""
     α::S
+    """emission cross product spectral index"""
+    αζ::S
     """Function that computes the profile as radius `r` and redshift `z`"""
     profile::FD
     """ FluidVelocity struct"""
@@ -43,21 +43,23 @@ struct BAM{S, FD, V, B}
     b::B
 end
 
-function bam(nmax, spin, α, rpeak, width, βv, χ, ι, η=χ+π)
+function bam(nmax, spin, α, αζ, rpeak, width, βv, χ, ι, η=χ+π)
     g = Kerr(spin)
     v = FluidVelocity(βv, χ)
     b = MagneticField(ι, η)
     profile = GaussianRing(rpeak, width)
-    return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, profile, v, b)
+    return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, αζ, profile, v, b)
 end
+bam(nmax, spin, α, rpeak, width, βv, χ, ι, η=χ+π) = bam(nmax, spin, α, α, rpeak, width, βv, χ, ι, η)
 
-function bamDblPower(nmax, spin, α, rpeak, p1, p2, βv, χ, ι, η=χ+π)
+function bamDblPower(nmax, spin, α, αζ, rpeak, p1, p2, βv, χ, ι, η=χ+π)
     g = Kerr(spin)
     v = FluidVelocity(βv, χ)
     b = MagneticField(ι, η)
     profile = DblPower(rpeak, p1, p2)
-    return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, profile, v, b)
+    return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, αζ, profile, v, b)
 end
+bamDblPower(nmax, spin, α, rpeak, p1, p2, βv, χ, ι, η=χ+π) = bamDblPower(nmax, spin, α, α, rpeak, p1, p2, βv, χ, ι, η)
 
 bamGauss(nmax, spin, α, rpeak, width, βv, χ, ι, η=χ+π) = bam(nmax, spin, α, rpeak, width, βv, χ, ι, η)
 
@@ -167,7 +169,7 @@ end
 function _emission(α, β, r, νr, νθ, g, o, bam, θs)
     fluid_vel = bam.β
     fluidβ = @SVector[fluid_vel.β, π/2. , fluid_vel.χ]
-    eα, eβ, redshift, lp = calcPol(α, β, r,  θs, o.inclination, g.spin, bam.α,  magnetic_vector(bam.b), fluidβ , νr, νθ)
+    eα, eβ, redshift, lp = calcPol(α, β, r,  θs, o.inclination, g.spin, bam.αζ,  magnetic_vector(bam.b), fluidβ , νr, νθ)
 
     # Get the profile value at the emission radius
     prof = profile(bam, r)*redshift^(3+bam.α)

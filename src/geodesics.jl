@@ -569,7 +569,7 @@ evpa(fα,fβ) = atan(-fα, fβ)
 
 
 
-function calcPol(α, β, ri, θs, θo, a, spec_index, magfield::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
+function calcPol(α, β, ri, θs, θo, a, cross_spec_index, magfield::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
     βv = βfluid[1]
     θz = βfluid[2]
     ϕz = βfluid[3]
@@ -604,7 +604,7 @@ function calcPol(α, β, ri, θs, θo, a, spec_index, magfield::AbstractArray{Fl
     κ = κ / √(conj(κ)*κ)
 
 
-    eα, eβ = screen_polarisation(κ, θo, a, α, β) .* (norm^((spec_index+1.)/2))
+    eα, eβ = screen_polarisation(κ, θo, a, α, β) .* (norm^((cross_spec_index+1.)/2))
 
     return eα, eβ, 1/p_fluid_u[1], abs(p_fluid_u[1]/p_fluid_u[4])
 end
