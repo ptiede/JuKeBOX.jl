@@ -376,41 +376,45 @@ Mino time of trajectory between two inclinations for a given screen coordinate
 Gθ(α, β, a, θs, θo, isindir, n) = _Gθ(sign(β), θs, θo, a, isindir, n, η(α, β, θo, a), λ(α, θo))
 
 function _Gθ(signβ, θs, θo, a, isindir, n, η, λ)
-  Yo, Ys, = 0., 0.
+  Go, Gs, Ghat, minotime, isvortical = 0., 0., 0., 0., false
 
-  Δθ = 1/2*(1 - (η+ λ^2)/a^2)
+  Δθ = 1/2*(1 - (η + λ^2)/a^2)
   up = Δθ + √(Δθ^2 + η/a^2)
   um = Δθ - √(Δθ^2 + η/a^2)
   m = up/um
   k = m
 
-  isvortical = η< 0.
+  isvortical = η < 0.
   args, argo, k = isvortical ? ((cos(θs)^2 - um)/(up-um), (cos(θo)^2 - um)/(up-um), 1. - m) : (cos(θs)/√(up), cos(θo)/√(up), m)
   if isvortical 
-    if (!(0. < argo < 1.) ||  !(0. < args <  1.)); return Inf, isvortical; end
-    Yo = asin(√argo)
-    Ys = asin(√args)
+    if (!(0. < argo < 1.) ||  !(0. < args <  1.))
+      return Inf, isvortical
+    end
+    tempfac = 1/√abs(um*a^2)
+    Go = ((θs > π/2) ? -1 : 1)*tempfac*Elliptic.F(asin(√argo), k)
+    Gs = ((θs > π/2) ? -1 : 1)*tempfac*Elliptic.F(asin(√args), k)
+    Ghat = 2tempfac*Elliptic.K(k)
+
   else
-    if !(-1 < args < 1) || !(-1 < argo < 1); return Inf, isvortical; end
-    Yo = asin(argo)
-    Ys = asin(args)
+    if !(-1 < args < 1) || !(-1 < argo < 1)
+     return Inf, isvortical
+    end
+    tempfac = 1/√abs(um*a^2)
+    Go = tempfac*Elliptic.F(asin(argo), k)
+    Gs = tempfac*Elliptic.F(asin(args), k)
+    Ghat = 2tempfac*Elliptic.K(k)
+  end
+ 
+  isincone = abs(cos(θs)) < abs(cos(θo))
+  νθ =  isincone ? (n%2==1) ⊻ (θo > θs) : !isindir ⊻ (θs > π/2) 
+  if isincone && (isindir != ((signβ > 0) ⊻ (θo > π/2) ))
+    return Inf, isvortical
+  end
+  if ((((signβ < 0) ⊻ (θs > π/2)) ⊻ (n%2==1)) && !isincone && !isvortical) || (isvortical && ((θo >= π/2) ⊻ (θs > π/2)))
+    return Inf, isvortical
   end
 
-  tempfac = 1/√abs(um*a^2)
-  Go = tempfac*Elliptic.F(Yo, k)
-  Gs = tempfac*Elliptic.F(Ys, k)
-  Ghat = 2tempfac*Elliptic.K(k)
-
-  is_in_cone = cos(θs) < abs(cos(θo))
-
-  # Check if the observer is in the cone and if the indirect emission is on the correct side of the screen
-  (is_in_cone && (isindir != ((signβ > 0) ⊻ (θo > π/2)))) && return Inf, isvortical
-
-  ((!is_in_cone && !isvortical && ((signβ < 0) ⊻ (n%2==1))) || (isvortical && θo >= π/2)) && return Inf, isvortical
-
-  νθ =  cos(θs) < abs(cos(θo)) ? (θo > θs) ⊻ (n%2==1) : !isindir
   minotime = real(isindir ? (n+1)*Ghat -signβ*Go + (νθ ? 1 : -1)*Gs : n*Ghat - signβ*Go + (νθ ? 1 : -1)*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
-
   return minotime, isvortical
 end 
 

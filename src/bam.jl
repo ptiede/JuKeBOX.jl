@@ -169,7 +169,7 @@ end
 function _emission(α, β, r, νr, νθ, g, o, bam, θs)
     fluid_vel = bam.β
     fluidβ = @SVector[fluid_vel.β, π/2. , fluid_vel.χ]
-    eα, eβ, redshift, lp = calcPol(α, β, r,  θs, o.inclination, g.spin, bam.αζ,  magnetic_vector(bam.b), fluidβ , νr, νθ)
+    eα, eβ, redshift, lp = calcPol(α, β, r, θs, o.inclination, g.spin, bam.αζ,  magnetic_vector(bam.b), fluidβ , νr, νθ)
 
     # Get the profile value at the emission radius
     prof = profile(bam, r)*redshift^(3+bam.α)
