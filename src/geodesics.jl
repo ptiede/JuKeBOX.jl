@@ -1,4 +1,4 @@
-import Elliptic
+import FastElliptic
 using LinearAlgebra, StaticArrays
 export get_roots, Gθ, rs, calcPol, η, λ, r_potential, θ_potential, λcrit, ηcrit, ϕ, Ipm, Δ, Σ, A
 ##
@@ -9,9 +9,11 @@ export get_roots, Gθ, rs, calcPol, η, λ, r_potential, θ_potential, λcrit, �
 # Useful functions
 ##----------------------------------------------------------------------------------------------------------------------
 
-@inline αboundary(a, θs) = a*sin(θs)
-@inline βboundary(α, θo, a, θs) = √max((cos(θo)^2-cos(θs)^2)*(α^2-a^2+a^2*cos(θs)^2)/(cos(θs)^2 -1), 0.0)
-
+αboundary(a, θs) = a*sin(θs)
+function βboundary(α, θo, a, θs) 
+  cosθs2 = cos(θs)^2
+  √max((cos(θo)^2-cosθs2)*(α^2-a^2(1-cosθs2))/(cosθs2 -1), 0.0)
+end
 
 """
   r_potential(r, η, λ, a)
@@ -27,7 +29,10 @@ Radial potential of a kerr blackhole
   `r` : Boyer Lindquist radius
 
 """
-r_potential(η, λ, a, r) = (r^2+a^2-a*λ)^2-(r^2 -2r + a^2)*(η+(λ-a)^2) # Eq 7 PhysRevD.101.044032
+function r_potential(η, λ, a, r) 
+  λ2 = λ^2
+  a*(a*(r*(r+2)-η)-4*λ*r)+r*(2*η+2*λ2+r*(-η-λ2+r^2)) # Eq 7 PhysRevD.101.044032
+end
 
 """
   θ_potential(r, η, λ, a)
@@ -57,17 +62,20 @@ Returns roots of r⁴ + (a²-η-λ²)r² + 2(η+(a-λ)²)r - a²η
   `a` : Blackhole spin
 """
 function get_roots(η, λ, a)
-    A = a^2 - η - λ^2
+    a2 = a*a
+    A = a2 - η - λ*λ
     B = 2(η + (λ-a)^2)
-    C = -a^2*η   
+    C = -a2*η   
 
-    P = -A^2 / 12 - C
-    Q = -A/3*((A/6 +0im)^2 - C) - B^2/8
+    P = -A*A / 12 - C
+    Q = -A/3*(A*A/36 +0im - C) - B*B/8
 
     Δ3 = -4*P^3 - 27*Q^2
     ωp = (-Q/2 + sqrt(-Δ3/108)+ 0im)^(1/3)
 
-    C = ((-1+0im)^(2/3), (-1+0im)^(4/3), 1) .* ωp
+    #C = ((-1+0im)^(2/3), (-1+0im)^(4/3), 1) .* ωp
+    C = (-0.4999999999999999 + 0.8660254037844387im, -0.5000000000000002 - 0.8660254037844385im, 1) .* ωp
+
     v = -P ./ ((3+0im) .* C)
     
     ξ0 = argmax(real, (C .+ v))  - A/3.
@@ -133,13 +141,97 @@ function rs(α, β, θs, θo, a, isindir, n)
     end
     ηtemp = η(α, β, θo, a)
     λtemp = λ(α, θo)
-    τ, _ = _Gθ(sign(β), θs, θo, a, isindir, n, ηtemp, λtemp)
+    τ, _, _ = _Gθ(sign(β), θs, θo, a, isindir, n, ηtemp, λtemp)
     if τ != Inf
       return _rs(ηtemp, λtemp, a, τ)
     else 
-      (0., true, 4) 
+      return (0., true, 4) 
     end
 end
+
+function rs_mask(n_init, α, β, θs, θo, a, isindir) 
+    if abs(cos(θs)) > abs(cos(θo))
+        αmin = αboundary(a, θs)
+        βbound = (abs(α) >= αmin ? βboundary(α, θo, a, θs) : 0.)
+        abs(β) < βbound && return (0., true, 4), true
+    end
+    ηtemp = η(α, β, θo, a)
+    λtemp = λ(α, θo)
+    #τ = Gθ(α, β, a, θs, θo, isindir, n)[1]
+    τ0, τhat, _ = _Gθ(sign(β), θs, θo, a, isindir, n_init, ηtemp, λtemp)
+    if τ0 != Inf
+      τ = τ0 + τhat
+      return _rsmask(ηtemp, λtemp, a, τ0, τ)
+    else
+      return (0., true, 4), true
+    end
+end
+
+
+function rs_cumulative!(rsvals, n_init, α, β, θs, θo, a, isindir) 
+    n = length(rsvals)
+    if abs(cos(θs)) > abs(cos(θo))
+        αmin = αboundary(a, θs)
+        βbound = (abs(α) >= αmin ? βboundary(α, θo, a, θs) : 0.)
+        if abs(β) < βbound
+          for i in 1:n
+            rsvals[i] = (0., true, 4)
+          end
+        end
+    end
+    ηtemp = η(α, β, θo, a)
+    λtemp = λ(α, θo)
+    #τ = Gθ(α, β, a, θs, θo, isindir, n)[1]
+    τ0, τhat, _ = _Gθ(sign(β), θs, θo, a, isindir, 0, ηtemp, λtemp)
+    if τ0 != Inf
+      τ = τ0 + n_init*τhat
+      currrs = (1000., true, 4)
+      for i in 1:n
+        if currrs[1] != 0.0
+          currrs = _rs(ηtemp, λtemp, a, τ)
+          rsvals[i] = currrs
+          τ += τhat
+        else
+          rsvals[i] = (0., true, 4)
+        end
+      end
+    else
+      for i in 1:n
+        rsvals[i] = (0., true, 4)
+      end
+    end
+    return nothing
+end
+
+function _rsmask(η, λ, a, τ0, τ)
+  ans = 0.0
+  ansmask = 0.0
+  νr = true
+  νrmask = true
+
+  roots = get_roots(η, λ, a)
+  rh = 1 + √(1-a*a)
+  numreals = (abs(imag(roots[1])) > 1e-10 ? 0 : 2) + (abs(imag(roots[3])) > 1e-10 ? 0 : 2)
+
+  if numreals == 4 #case 1 & 2
+    ans, νr = _rs_case1(real.(roots), rh, τ0)
+    ansmask, νrmask = _rs_case1(real.(roots), rh, τ)
+
+  elseif numreals == 2 #case3
+    if abs(imag(roots[4])) < 1e-10
+     roots= (roots[1], roots[4],roots[2],roots[3])
+    end
+
+    ans, νr = _rs_case3(roots, τ0)
+    ansmask, νrmask = _rs_case3(roots, τ)
+  else #case 4
+    ans, νr = _rs_case4(roots, rh, τ0)
+    ansmask, νrmask = _rs_case4(roots, rh, τ)
+    end
+  return (ans, νr, numreals), (ansmask <= rh)
+end
+
+
 
 """
   _rs(η, λ, a, τ)
@@ -177,87 +269,63 @@ function _rs(η, λ, a, τ)
 end
 
 function _rs_case1(roots, rh, τ)
-  ans = 0.0
-  νr = true
   _, _, r3, r4 = roots
   root_diffs = get_root_diffs(roots...)
   _, r31, r32, r41, r42 = root_diffs
 
-  k = (r32*r41) / (r31*r42)
-  fo = Elliptic.F(asin(√(r31/r41)), k)
-  X2 = fo - √(r31*r42) * τ / 2
-  if r4 >= rh && X2 < -fo # invalid case1
-    ans = 0.
-  elseif r4 < rh && τ > I2r(roots, root_diffs, rh, true) # invalid case2
-    ans = 0.
-  else
-    sn = r41 * Elliptic.Jacobi.sn(X2, k)^2
+  r4 >= rh && τ > 2I2r_turn(root_diffs) && return 0.0, true # invalid case1
+  r4 < rh && τ > I2r(roots, root_diffs, rh, true) && return 0.0, true# invalid case2
 
-    ans = (r31*r4 - r3*sn) / (r31 - sn)
-    νr = X2 > 0
-  end
-  return ans, νr
+  k = (r32*r41) / (r31*r42)
+  fo = FastElliptic.F(asin(√(r31/r41)), k)
+  X2 = fo - √(r31*r42) * τ / 2
+  sn = r41 * FastElliptic.sn(X2, k)^2
+  return (r31*r4 - r3*sn) / (r31 - sn), X2 > 0
 end
 function _rs_case3(roots, τ)
-  ans = 0.0
-  νr = true
   r1, r2, _, _ = roots
   root_diffs = get_root_diffs(roots...)
   r21, r31, r32, r41, r42 = root_diffs
 
-  if τ > I3r_full(root_diffs)#(roots, root_diffs, rh)
-    ans = 0.
-  else
-    A = √abs(r32*r42)
-    B = √abs(r31*r41)
-    k =  real(((A + B)^2 - r21^2)/(4*A*B))
+  τ > I3r_full(root_diffs) && return 0.0, true
 
-    fo = Elliptic.F(acos((A-B)/(A+B)), k)
-    X3  = real(fo - √(A*B)*τ)
-    cn = Elliptic.Jacobi.cn(X3, k)
-    num = -A*r1 + B*r2 + (A*r1+B*r2)*cn
-    den = -A + B + (A+B)*cn
+  A = √abs(r32*r42)
+  B = √abs(r31*r41)
+  k =  real(((A + B)^2 - r21^2)/(4*A*B))
 
-    ans = real(num/den)
-    νr = X3 > 0 
-  end
+  fo = FastElliptic.F(acos((A-B)/(A+B)), k)
+  X3  = real(fo - √(A*B)*τ)
+  cn = FastElliptic.cn(X3, k)
+  num = -A*r1 + B*r2 + (A*r1+B*r2)*cn
+  den = -A + B + (A+B)*cn
 
-    return ans, νr
+  return real(num/den), X3 > 0 
 end
 function _rs_case4(roots, rh, τ)
-  ans = 0.0
-  νr = true
-
   r1, _, _, r4 = roots
   root_diffs = get_root_diffs(roots...)
   _, r31, r32, r41, r42 = root_diffs
 
+  τ > I4r(roots, root_diffs, rh) && return 0.0, true
+  a2 = abs(imag(r1))
+  b1 = real(r4)
+  C = √real(r31*r42)
+  D = √real(r32*r41)
+  k4 = 4*C*D/(C+D)^2
+  
+  go = √(4a2^2 - (C-D)^2) / ((C+D)^2 - 4a2^2)
+  fo = 2/(C+D)*FastElliptic.F(π/2 + atan(go), k4) 
+  X4 =  (C+D)/2*(fo - τ)
+  num = go - FastElliptic.sc(X4, k4)
+  den = 1 + go*FastElliptic.sc(X4, k4)
 
-  if τ > I4r(roots, root_diffs, rh)
-    ans = 0.
-  else
-    a2 = abs(imag(r1))
-    b1 = real(r4)
-    C = √real(r31*r42)
-    D = √real(r32*r41)
-    k4 = 4*C*D/(C+D)^2
-    
-    go = √(4a2^2 - (C-D)^2) / ((C+D)^2 - 4a2^2)
-    fo = 2/(C+D)*Elliptic.F(π/2 + atan(go), k4) 
-    X4 =  (C+D)/2*(fo - τ)
-    num = go - Elliptic.Jacobi.sc(X4, k4)
-    den = 1 + go*Elliptic.Jacobi.sc(X4, k4)
-
-    ans = -(a2*num/den + b1)
-    νr = X4 > 0 
-  end
-  return ans, νr
+  return -(a2*num/den + b1), X4 > 0 
 end
 
 function I2r_turn(root_diffs::NTuple{5})
   _, r31, r32, r41, r42 = root_diffs
   k = r32*r41/(r31*r42)
-  return 2/√real(r31*r42)*Elliptic.F(asin(√(r31/r41)), k)
+  return 2/√real(r31*r42)*FastElliptic.F(asin(√(r31/r41)), k)
 end
 
 function I2r(roots::NTuple{4}, root_diffs::NTuple{5}, rs, isindir)
@@ -266,25 +334,30 @@ function I2r(roots::NTuple{4}, root_diffs::NTuple{5}, rs, isindir)
 
   k = r32*r41/(r31*r42)
   x2_s = √((rs-r4)/(rs-r3)*r31/r41)
-  if !(-1 < x2_s < 1); return 0.; end
-  Ir_s = 2/√real(r31*r42)*Elliptic.F(asin(x2_s), k)
+  !(-1 < x2_s < 1) && return 0.
+
+  Ir_s = 2/√real(r31*r42)*FastElliptic.F(asin(x2_s), k)
   Ir_turn = I2r_turn(root_diffs)
 
-  return Ir_turn + (isindir ? Ir_s : -Ir_s)
+  if isindir 
+    return Ir_turn + Ir_s
+  else
+    return Ir_turn - Ir_s
+  end
 end
 
 function I3r_full(root_diffs)
   r21, r31, r32, r41, r42 = map(abs, root_diffs)
   A2 = r32*r42
   B2 = r31*r41
-  if A2 < 0.0 || B2 < 0.0; return Inf; end
+  if A2 < 0. || B2 < 0; return Inf; end
 
   A, B = √A2, √B2
   k3 = ((A+B)^2 - r21^2)/(4A*B)
 
   temprat = B/A
   x3_turn = real(√((1+0im - temprat)/(1 + temprat)))
-  return 2/√real(A*B)*Elliptic.F(acos(x3_turn), k3)
+  return 2/√real(A*B)*FastElliptic.F(acos(x3_turn), k3)
 end
 
 function I3r(roots, root_diffs, rs)
@@ -301,7 +374,7 @@ function I3r(roots, root_diffs, rs)
   k3 = real(((A+B)^2 - r21^2)/(4A*B))
   temprat = B*(rs-r2)/(A*(rs-r1))
   x3_s = real(√((1+0im - temprat)/(1 + temprat)))
-  Ir_s = 2/√real(A*B)*Elliptic.F(real(acos(x3_s)), k3)
+  Ir_s = 2/√real(A*B)*FastElliptic.F(real(acos(x3_s)), k3)
   Ir_full = I3r_full(root_diffs)
 
   return abs(Ir_full - Ir_s)
@@ -320,7 +393,7 @@ function I4r_full(roots, root_diffs)
     k4 = 4*C*D/(C+D)^2
     
     go = √max((4a2^2 - (C-D)^2) / ((C+D)^2 - 4a2^2), 0.)
-    return 2/(C+D)*Elliptic.F(π/2 + atan(go), k4) 
+    return 2/(C+D)*FastElliptic.F(π/2 + atan(go), k4) 
   catch e
     return 0
   end
@@ -343,12 +416,11 @@ function I4r(roots, root_diffs, rs)
   
   go = √max((4a2^2 - (C-D)^2) / ((C+D)^2 - 4a2^2), 0.)
   x4_s = (rs + b1)/a2
-  Ir_s = 2/(C+D)*Elliptic.F(atan(x4_s) + atan(go), k4) 
+  Ir_s = 2/(C+D)*FastElliptic.F(atan(x4_s) + atan(go), k4) 
   Ir_full = I4r_full(roots, root_diffs)
 
   return Ir_full - Ir_s
 end
-
 
 #
 ##----------------------------------------------------------------------------------------------------------------------
@@ -376,7 +448,16 @@ Mino time of trajectory between two inclinations for a given screen coordinate
 Gθ(α, β, a, θs, θo, isindir, n) = _Gθ(sign(β), θs, θo, a, isindir, n, η(α, β, θo, a), λ(α, θo))
 
 function _Gθ(signβ, θs, θo, a, isindir, n, η, λ)
-  Go, Gs, Ghat, minotime, isvortical = 0., 0., 0., 0., false
+  Go, Gs, Ghat, minotime, isvortical = 0., 0., 0., 0., η < 0.
+
+
+  isincone = abs(cos(θs)) < abs(cos(θo))
+  if isincone && (isindir != ((signβ > 0) ⊻ (θo > π/2) ))
+    return Inf, Inf, isvortical
+  end
+  if ((((signβ < 0) ⊻ (θs > π/2)) ⊻ (n%2==1)) && !isincone && !isvortical) || (isvortical && ((θo >= π/2) ⊻ (θs > π/2)))
+    return Inf, Inf, isvortical
+  end
 
   Δθ = 1/2*(1 - (η + λ^2)/a^2)
   up = Δθ + √(Δθ^2 + η/a^2)
@@ -384,40 +465,39 @@ function _Gθ(signβ, θs, θo, a, isindir, n, η, λ)
   m = up/um
   k = m
 
-  isvortical = η < 0.
-  args, argo, k = isvortical ? ((cos(θs)^2 - um)/(up-um), (cos(θo)^2 - um)/(up-um), 1. - m) : (cos(θs)/√(up), cos(θo)/√(up), m)
+  #isvortical = η < 0.
+  args = 0 
+  argo = 0 
+  k = 0
   if isvortical 
+    args = (cos(θs)^2 - um)/(up-um)
+    argo = (cos(θo)^2 - um)/(up-um)
+    k = 1. - m 
     if (!(0. < argo < 1.) ||  !(0. < args <  1.))
-      return Inf, isvortical
+      return Inf, Ghat, isvortical
     end
     tempfac = 1/√abs(um*a^2)
-    Go = ((θs > π/2) ? -1 : 1)*tempfac*Elliptic.F(asin(√argo), k)
-    Gs = ((θs > π/2) ? -1 : 1)*tempfac*Elliptic.F(asin(√args), k)
-    Ghat = 2tempfac*Elliptic.K(k)
-
-  else
+    Go = ((θs > π/2) ? -1 : 1)*tempfac*FastElliptic.F(asin(√argo), k)
+    Gs = ((θs > π/2) ? -1 : 1)*tempfac*FastElliptic.F(asin(√args), k)
+    Ghat = 2tempfac*FastElliptic.K(k)
+  else 
+    args = cos(θs)/√(up)
+    argo = cos(θo)/√(up)
+    k = m
     if !(-1 < args < 1) || !(-1 < argo < 1)
-     return Inf, isvortical
+     return Inf, Ghat, isvortical
     end
     tempfac = 1/√abs(um*a^2)
-    Go = tempfac*Elliptic.F(asin(argo), k)
-    Gs = tempfac*Elliptic.F(asin(args), k)
-    Ghat = 2tempfac*Elliptic.K(k)
+    Go = tempfac*FastElliptic.F(asin(argo), k)
+    Gs = tempfac*FastElliptic.F(asin(args), k)
+    Ghat = 2tempfac*FastElliptic.K(k)
+
   end
  
-  isincone = abs(cos(θs)) < abs(cos(θo))
   νθ =  isincone ? (n%2==1) ⊻ (θo > θs) : !isindir ⊻ (θs > π/2) 
-  if isincone && (isindir != ((signβ > 0) ⊻ (θo > π/2) ))
-    return Inf, isvortical
-  end
-  if ((((signβ < 0) ⊻ (θs > π/2)) ⊻ (n%2==1)) && !isincone && !isvortical) || (isvortical && ((θo >= π/2) ⊻ (θs > π/2)))
-    return Inf, isvortical
-  end
-
   minotime = real(isindir ? (n+1)*Ghat -signβ*Go + (νθ ? 1 : -1)*Gs : n*Ghat - signβ*Go + (νθ ? 1 : -1)*Gs ) #Sign of Go indicates whether the ray is from the forward cone or the rear cone
-  return minotime, isvortical
+  return minotime, Ghat, isvortical
 end 
-
 
 ##----------------------------------------------------------------------------------------------------------------------
 #Polarization stuff
@@ -585,7 +665,10 @@ function calcPol(α, β, ri, θs, θo, a, cross_spec_index, magfield::AbstractAr
     p_bl_u = kerr_met_uu(ri, θs, a) * p_bl_d
     p_zamo_u = jac_bl2zamo_ud(ri, θs, a) * p_bl_u
     p_fluid_u = jac_zamo2fluid_ud(βv, θz, ϕz) *  p_zamo_u
-    vec = cross( (p_fluid_u[begin+1:end]) / p_fluid_u[1], magfield)
+    magfieldx, magfieldy, magfieldz = magfield
+    p_fluid_ut, p_fluid_ux, p_fluid_uy, p_fluid_uz = p_fluid_u
+    vec = @SVector[p_fluid_uy*magfieldz - magfieldy*p_fluid_uz, p_fluid_uz*magfieldx - magfieldx*p_fluid_uz, p_fluid_ux*magfieldy - magfieldy*p_fluid_ux]  ./ p_fluid_ut
+    #vec = cross( (p_fluid_u[begin+1:end]) / p_fluid_u[1], magfield)
     norm = √dot(vec, vec) + eps()
     f_fluid_u = SVector(zero(eltype(vec)), vec[1], vec[2], vec[3])
     #f_fluid_u[2:end] .= vec 

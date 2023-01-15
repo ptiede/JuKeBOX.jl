@@ -1,9 +1,11 @@
+@concrete struct RayCache{S}
+    radList::Tuple{S}
+end
 """
     Differentiable accelerated Ray Tracing
 
 This is a differentiable general relativistic ray-tracer. I think that's it
 """
-
 
 struct GaussianRing{R,W}
     rpeak::R
@@ -41,6 +43,7 @@ struct BAM{S, FD, V, B}
     β::V
     """ MagneticField struct"""
     b::B
+    #BAM(nmax, α, αζ, profile, β, b) = new{typeof(α), typeof(profile), typeof(β), typeof(b)}(nmax, Vector{Tuple{Float64,Bool,Int}}(undef,nmax+1), α, αζ, profile, β, b)
 end
 
 function bam(nmax, spin, α, αζ, rpeak, width, βv, χ, ι, η=χ+π)
@@ -49,6 +52,8 @@ function bam(nmax, spin, α, αζ, rpeak, width, βv, χ, ι, η=χ+π)
     b = MagneticField(ι, η)
     profile = GaussianRing(rpeak, width)
     return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, αζ, profile, v, b)
+    #return g, BAM(nmax, α, αζ, profile, v, b)
+
 end
 bam(nmax, spin, α, rpeak, width, βv, χ, ι, η=χ+π) = bam(nmax, spin, α, α, rpeak, width, βv, χ, ι, η)
 
@@ -58,6 +63,7 @@ function bamDblPower(nmax, spin, α, αζ, rpeak, p1, p2, βv, χ, ι, η=χ+π)
     b = MagneticField(ι, η)
     profile = DblPower(rpeak, p1, p2)
     return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, αζ, profile, v, b)
+    #return g, BAM(nmax, α, αζ, profile, v, b)
 end
 bamDblPower(nmax, spin, α, rpeak, p1, p2, βv, χ, ι, η=χ+π) = bamDblPower(nmax, spin, α, α, rpeak, p1, p2, βv, χ, ι, η)
 
@@ -129,11 +135,7 @@ function tracepolmap(alpha, beta, g, θs, o, bam)
     return polim
 end
 
-
-
-
 function raytrace(α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
-
     stokesi = 0.; stokesq = 0.; stokesu = 0.
     for n in 0:bam.nmax
         _, i, q, u = trace_nring(n, α, β, g, θs, o, bam, isindir)
@@ -143,6 +145,18 @@ function raytrace(α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
     end
 
     return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi)))
+end
+
+function raytrace_n(n, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
+    _, stokesi, stokesq, stokesu = trace_nring(n, α, β, g, θs, o, bam, isindir)
+
+    return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi)))
+end
+
+function raytrace_and_get_mask(n, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
+   (_, stokesi, stokesq, stokesu), mask = trace_nring_and_get_mask(n, α, β, g, θs, o, bam, isindir)#, radBuffer)
+
+    return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi))), mask
 end
 
 function trace_nring(n::Int, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
@@ -155,6 +169,18 @@ function trace_nring(n::Int, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindi
     (r == Inf || r < 1+ √(1-g.spin^2) + eps()) && return zero(T), zero(T), zero(T), zero(T)
 
     return _emission(α, β, r, νr, νθ, g, o, bam, θs)
+end
+
+function trace_nring_and_get_mask(n, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)#, radBuffer)
+    (r, νr, _), mask = rs_mask(n, α, β, θs, o.inclination, g.spin, isindir) 
+
+    T = eltype(r)
+    νθ =  cos(θs)< abs(cos(o.inclination)) ? (o.inclination>θs) ⊻ ((n-1)%2==1) : !isindir
+    if (r == Inf || r < 1+ √(1-g.spin^2) + eps())
+        return (zero(T), zero(T), zero(T), zero(T)), mask
+    else
+        return _emission(α, β, r, νr, νθ, g, o, bam, θs), mask
+    end
 end
 
 function mpow(m)
@@ -189,6 +215,3 @@ end
         return sβ+n+1
     end
 end
-
-
-
