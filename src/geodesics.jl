@@ -666,9 +666,8 @@ function calcPol(α, β, ri, θs, θo, a, cross_spec_index, magfield::AbstractAr
     p_zamo_u = jac_bl2zamo_ud(ri, θs, a) * p_bl_u
     p_fluid_u = jac_zamo2fluid_ud(βv, θz, ϕz) *  p_zamo_u
     magfieldx, magfieldy, magfieldz = magfield
-    p_fluid_ut, p_fluid_ux, p_fluid_uy, p_fluid_uz = p_fluid_u
-    vec = @SVector[p_fluid_uy*magfieldz - magfieldy*p_fluid_uz, p_fluid_uz*magfieldx - magfieldx*p_fluid_uz, p_fluid_ux*magfieldy - magfieldy*p_fluid_ux]  ./ p_fluid_ut
-    #vec = cross( (p_fluid_u[begin+1:end]) / p_fluid_u[1], magfield)
+    _, p_fluid_ux, p_fluid_uy, p_fluid_uz = p_fluid_u ./ p_fluid_u[1]
+    vec = @SVector[p_fluid_uy*magfieldz - p_fluid_uz*magfieldy, p_fluid_uz*magfieldx - p_fluid_ux*magfieldz, p_fluid_ux*magfieldy - p_fluid_uy*magfieldx]  
     norm = √dot(vec, vec) + eps()
     f_fluid_u = SVector(zero(eltype(vec)), vec[1], vec[2], vec[3])
     #f_fluid_u[2:end] .= vec 
