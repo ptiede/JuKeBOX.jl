@@ -1,6 +1,6 @@
 import FastElliptic
-using LinearAlgebra, StaticArrays
-export get_roots, Gθ, rs, calcPol, η, λ, r_potential, θ_potential, λcrit, ηcrit, ϕ, Ipm, Δ, Σ, A
+using StaticArrays
+export get_roots, Gθ, rs, calcPol, η, λ, r_potential, θ_potential, ϕ, Ipm, Δ, Σ, A
 ##
 # Follows the Formalism of Gralla & Lupsasca (https://arxiv.org/pdf/1910.12881.pdf)
 ##
@@ -16,39 +16,43 @@ function βboundary(α, θo, a, θs)
 end
 
 """
-  r_potential(r, η, λ, a)
+  r_potential(met::Kerr, r, η, λ)
 
 Radial potential of a kerr blackhole
 
-  `η` : Reduced Carter constant
+  `met` : Kerr Metric
 
-  `λ` : Reduced azimuthal agular momentum
+  `η`   : Reduced Carter constant
 
-  `a` : Blackhole spin
+  `λ`   : Reduced azimuthal agular momentum
 
-  `r` : Boyer Lindquist radius
+  `r`   : Boyer Lindquist radius
 
 """
-function r_potential(η, λ, a, r) 
+function r_potential(met::Kerr, η, λ, r) 
+  a = met.spin
   λ2 = λ^2
   a*(a*(r*(r+2)-η)-4*λ*r)+r*(2*η+2*λ2+r*(-η-λ2+r^2)) # Eq 7 PhysRevD.101.044032
 end
 
 """
-  θ_potential(r, η, λ, a)
+  θ_potential(met::Kerr, r, η, λ)
 
 Theta potential of a kerr blackhole
 
-  `η` : Reduced Carter constant
+  `met` : Kerr Metric
 
-  `λ` : Reduced azimuthal agular momentum
+  `η`   : Reduced Carter constant
 
-  `a` : Blackhole spin
+  `λ`   : Reduced azimuthal agular momentum
 
-  `θ` : Boyer Lindquist inclination
+  `θ`   : Boyer Lindquist inclination
 
 """
-θ_potential(η, λ, a, θ) = η + a^2*cos(θ)^2 - λ^2*cot(θ)^2
+function θ_potential(met::Kerr, η, λ, θ)
+  a = met.spin
+  η + a^2*cos(θ)^2 - λ^2*cot(θ)^2
+end
 
 """
   get_roots(η, λ, a)
@@ -97,32 +101,6 @@ A(r, θ, a) = (r^2 + a^2)^2 - a^2*Δ(r, a)*sin(θ)^2
 η(α, β, θo, a) = (α^2 - a^2)*cos(θo)^2 + β^2
 λ(α, θo) = -α*sin(θo)
 
-rtildep(a) = 2*(1+Cos(2/3*acos(a)))
-rtilden(a) = 2*(1+Cos(2/3*acos(-a)))
-
-
-"""
-    λcrit(r::Complex, a)
-
-Returns λ values on the critical curve associated with a given r.
-
-  `r` : Radius of orbit associated with critical η value
-
-  `a` : Blackhole spin
-"""
-λcrit(r, a) = a + r/a*(r- 2Δ(r, a)/(r-1))
-"""
-    ηcrit(r::Complex, a)
-
-Returns η values on the critical curve associated with a given r.
-
-  `r` : Radius of orbit associated with critical η value
-
-  `a` : Blackhole spin
-"""
-ηcrit(r, a) = (r^3/a^2)*(4*Δ(r,a)/(r-1)^2 - r)
-
-
 ##----------------------------------------------------------------------------------------------------------------------
 # Radial Stuff
 ##----------------------------------------------------------------------------------------------------------------------
@@ -134,7 +112,7 @@ function rs(α, β, θs, θo, a, isindir, n)
 
     if cos(θs) > abs(cos(θo))
         αmin = αboundary(a, θs)
-        βbound = (abs(α) >= αmin - eps() ? βboundary(α, θo, a, θs) : 0.)
+        βbound = (abs(α) >= αmin + eps() ? βboundary(α, θo, a, θs) : 0.)
         if abs(β) + eps() < βbound
             return 0., true, 4
         end
@@ -230,8 +208,6 @@ function _rsmask(η, λ, a, τ0, τ)
     end
   return (ans, νr, numreals), (ansmask <= rh)
 end
-
-
 
 """
   _rs(η, λ, a, τ)
@@ -422,7 +398,6 @@ function I4r(roots, root_diffs, rs)
   return Ir_full - Ir_s
 end
 
-#
 ##----------------------------------------------------------------------------------------------------------------------
 # θ Stuff
 ##----------------------------------------------------------------------------------------------------------------------
@@ -504,7 +479,10 @@ end
 ##----------------------------------------------------------------------------------------------------------------------
 MinkowskiMet() = @SMatrix [-1. 0. 0. 0.; 0. 1. 0. 0.; 0. 0. 1. 0.; 0. 0. 0. 1.]
 
-p_boyer_lindquist_d(r, θ, a, η, λ, νr::Bool, νθ::Bool) = @SVector [-1,(νr ? 1 : -1)*√abs(r_potential(η, λ, a, r))/Δ(r, a), λ, (νθ ? 1 : -1)*√abs(θ_potential(η, λ, a, θ))]
+function p_boyer_lindquist_d(met::Kerr, r, θ, η, λ, νr::Bool, νθ::Bool)
+  a = met.spin
+  @SVector [-1,(νr ? 1 : -1)*√abs(r_potential(met, η, λ, r))/Δ(r, a), λ, (νθ ? 1 : -1)*√abs(θ_potential(met, η, λ, θ))]
+end
 
 """
     kerr_met_uu(r, θ, a)
@@ -653,14 +631,15 @@ evpa(fα,fβ) = atan(-fα, fβ)
 
 
 
-function calcPol(α, β, ri, θs, θo, a, cross_spec_index, magfield::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
+function calcPol(met, α, β, ri, θs, θo, cross_spec_index, magfield::AbstractArray{Float64}, βfluid::AbstractArray{Float64}, νr::Bool, θsign::Bool)
+    a = met.spin
     βv = βfluid[1]
     θz = βfluid[2]
     ϕz = βfluid[3]
 
     ηtemp = η(α, β, θo, a)
     λtemp = λ(α, θo)
-    p_bl_d = p_boyer_lindquist_d(ri, θs, a, ηtemp, λtemp, νr, θsign)
+    p_bl_d = p_boyer_lindquist_d(met, ri, θs, ηtemp, λtemp, νr, θsign)
 
     p_bl_u = kerr_met_uu(ri, θs, a) * p_bl_d
     p_zamo_u = jac_bl2zamo_ud(ri, θs, a) * p_bl_u

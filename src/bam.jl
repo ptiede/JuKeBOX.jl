@@ -1,12 +1,3 @@
-@concrete struct RayCache{S}
-    radList::Tuple{S}
-end
-"""
-    Differentiable accelerated Ray Tracing
-
-This is a differentiable general relativistic ray-tracer. I think that's it
-"""
-
 struct GaussianRing{R,W}
     rpeak::R
     width::W
@@ -65,7 +56,7 @@ function bamDblPower(nmax, spin, α, αζ, rpeak, p1, p2, βv, χ, ι, η=χ+π)
     return g, BAM{typeof(α), typeof(profile), typeof(v), typeof(b)}(nmax, α, αζ, profile, v, b)
     #return g, BAM(nmax, α, αζ, profile, v, b)
 end
-bamDblPower(nmax, spin, α, rpeak, p1, p2, βv, χ, ι, η=χ+π) = bamDblPower(nmax, spin, α, α, rpeak, p1, p2, βv, χ, ι, η)
+#bamDblPower(nmax, spin, α, rpeak, p1, p2, βv, χ, ι, η=χ+π) = bamDblPower(nmax, spin, α, α, rpeak, p1, p2, βv, χ, ι, η)
 
 bamGauss(nmax, spin, α, rpeak, width, βv, χ, ι, η=χ+π) = bam(nmax, spin, α, rpeak, width, βv, χ, ι, η)
 
@@ -117,7 +108,7 @@ function traceimg!(polim, alpha, beta, g, θs, o, bam)
     stokesi = polim.I
     stokesq = polim.Q
     stokesu = polim.U
-    @batch for C in CartesianIndices(stokesi)
+    for C in CartesianIndices(stokesi)
         iy,ix = Tuple(C)
         x = alpha[ix]
         y = beta[iy]
