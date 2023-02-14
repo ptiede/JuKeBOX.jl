@@ -12,7 +12,7 @@ export get_roots, Gθ, rs, calcPol, η, λ, r_potential, θ_potential, λcrit, �
 αboundary(a, θs) = a*sin(θs)
 function βboundary(α, θo, a, θs) 
   cosθs2 = cos(θs)^2
-  √max((cos(θo)^2-cosθs2)*(α^2-a^2(1-cosθs2))/(cosθs2 -1), 0.0)
+  √max((cos(θo)^2-cosθs2)*(α^2-a^2*(1-cosθs2))/(cosθs2 -1), 0.0)
 end
 
 """
