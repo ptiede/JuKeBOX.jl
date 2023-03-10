@@ -1,6 +1,3 @@
-@concrete struct RayCache{S}
-    radList::Tuple{S}
-end
 """
     Differentiable accelerated Ray Tracing
 
@@ -113,28 +110,6 @@ end
     profile(b.profile, r)
 end
 
-function traceimg!(polim, alpha, beta, g, θs, o, bam)
-    stokesi = polim.I
-    stokesq = polim.Q
-    stokesu = polim.U
-    @batch for C in CartesianIndices(stokesi)
-        iy,ix = Tuple(C)
-        x = alpha[ix]
-        y = beta[iy]
-        i,q,u = raytrace(x, y, g, θs, o, bam, true) + raytrace(x, y, g, θs, o, bam, false)
-        stokesi[C] = i
-        stokesq[C] = q
-        stokesu[C] = u
-    end
-end
-
-function tracepolmap(alpha, beta, g, θs, o, bam)
-    nx,ny = length(alpha), length(beta)
-    polim = StructArray((I=zeros(ny, nx), Q = zeros(ny, nx), U = zeros(ny, nx)))
-    traceimg!(polim, alpha, beta, g, θs, o, bam)
-    return polim
-end
-
 function raytrace(α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
     stokesi = 0.; stokesq = 0.; stokesu = 0.
     for n in 0:bam.nmax
@@ -144,19 +119,19 @@ function raytrace(α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
         stokesu += u
     end
 
-    return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi)))
+    return @SVector[stokesi, stokesq, stokesu, zero(typeof(stokesi))]
 end
 
 function raytrace_n(n, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
     _, stokesi, stokesq, stokesu = trace_nring(n, α, β, g, θs, o, bam, isindir)
 
-    return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi)))
+    return @SVector[stokesi, stokesq, stokesu, zero(typeof(stokesi))]
 end
 
 function raytrace_and_get_mask(n, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
    (_, stokesi, stokesq, stokesu), mask = trace_nring_and_get_mask(n, α, β, g, θs, o, bam, isindir)#, radBuffer)
 
-    return StokesVector(stokesi, stokesq, stokesu, zero(typeof(stokesi))), mask
+    return @SVector[stokesi, stokesq, stokesu, zero(typeof(stokesi))], mask
 end
 
 function trace_nring(n::Int, α, β, g::Kerr, θs, o::Observer, bam::BAM, isindir)
