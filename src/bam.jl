@@ -150,7 +150,7 @@ function trace_nring_and_get_mask(n, α, β, g::Kerr, θs, o::Observer, bam::BAM
     (r, νr, _), mask = rs_mask(n, α, β, θs, o.inclination, g.spin, isindir) 
 
     T = eltype(r)
-    νθ =  cos(θs)< abs(cos(o.inclination)) ? (o.inclination>θs) ⊻ ((n-1)%2==1) : !isindir
+    νθ =  cos(θs)< abs(cos(o.inclination)) ? (o.inclination>θs) ⊻ (n%2==1) : !isindir
     if (r == Inf || r < 1+ √(1-g.spin^2) + eps())
         return (zero(T), zero(T), zero(T), zero(T)), mask
     else
